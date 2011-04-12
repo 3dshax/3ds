@@ -6,7 +6,11 @@
 
 #define SAVE_OFFSET	0x3000
 #define FST_BLOCK_OFFSET	0x6c
-#define FST_OFFSET				0x58
+#define FST_OFFSET		0x58
+
+u32 fs_get_offset(u8 *buf) {
+	return *(u32*)(buf + SAVE_OFFSET + FST_OFFSET);
+}
 
 int fs_get_start(u8 *buf) {
 	u32 block_offset, fst_offset;
