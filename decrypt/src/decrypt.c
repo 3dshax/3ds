@@ -2,7 +2,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include "save.h"
+#include <unistd.h>
+#include <save.h>
 #include <sys/stat.h>
 
 #define XORPAD_SIZE	512
@@ -78,17 +79,37 @@ int wearlevel(void* buffer, size_t size, void* dest){
 	return 0;
 }
 
-void* find_next_fs(void* buf, size_t sz){
-	char* magic = (char*) buf;
-	sz = sz / SECTOR_SIZE;
-	for(int i = 0; i < sz; i++){
-		if(!strncmp(&magic[i * SECTOR_SIZE], "SAVE", 4))
-			break;
+void parse_fs(void*, char*);
+
+#define PART_BASE	0x2000
+#define FS_BASE_OFF	0x9C
+#define FS_LENGTH_OFF	0xA4
+#define FS_INDEX_OFF	0x39
+#define DIFI_LENGTH	0x130
+
+void parse_partitions(void* buf, char* target_dir){
+	char part_dir[256];
+	uint8_t* buffer = (uint8_t*)buf + 0x200;
+	uint32_t cur_part = PART_BASE;
+	uint32_t part_length = 0;
+
+	if(mkdir(target_dir, 0766) < 0){
+		fprintf(stderr, "Couldn't create dir %s\n", target_dir);
+		return;
 	}
 
-	if(i >= sz)
-		return NULL;
-	return &magic[i * SECTOR_SIZE];
+	chdir(target_dir);
+	while(!strncmp((char*)buffer, "DIFI", 4)){
+		snprintf(part_dir, sizeof(part_dir), "part-%d", buffer[FS_INDEX_OFF]);
+		cur_part += *((uint32_t*)&buffer[FS_BASE_OFF]);
+		part_length = *((uint32_t*)&buffer[FS_LENGTH_OFF]);
+#ifdef DEBUG
+		printf("Partition @ %06X (%06X)\n", cur_part, part_length);
+#endif /* DEBUG */
+		parse_fs(buf + cur_part, part_dir);
+		cur_part += part_length;
+		buffer += DIFI_LENGTH;
+	}	
 }
 
 #define	FST_OFF_OFFSET	(0x6C)
@@ -212,7 +233,7 @@ int main(int argc, char** argv){
 		}
 		
 		if(do_wearlevel && do_filesys){
-			parse_fs(&wearlevel_buf[FS_OFFSET], argv[4]);
+			parse_partitions(wearlevel_buf, argv[4]);
 		} else {
 			fp = fopen(argv[4], "wb");
 			if(fp == NULL){

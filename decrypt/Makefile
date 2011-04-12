@@ -13,3 +13,6 @@ $(EXECUTABLE): $(OBJECTS)
 
 .c.o:
 	$(CC) -I$(INCLUDES) $(CFLAGS) $< -o $@
+
+clean:
+	rm $(OBJECTS) $(EXECUTABLE)
