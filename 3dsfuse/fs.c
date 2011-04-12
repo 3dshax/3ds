@@ -4,25 +4,66 @@
 #include "types.h"
 #include "fs.h"
 
+#define BASE_OFFSET	0x2000
+
+
 #define SAVE_OFFSET	0x3000
 #define FST_BLOCK_OFFSET	0x6c
 #define FST_OFFSET		0x58
 
-u32 fs_get_offset(u8 *buf) {
-	return *(u32*)(buf + SAVE_OFFSET + FST_OFFSET);
+
+
+u8 *fs_part_get_info(u8 *buf, u32 part_no) {
+	return buf + 0x200 + (part_no * 0x130);
 }
 
-int fs_get_start(u8 *buf) {
+u8 *fs_part(u32 part_no, u8 *buf) {
+	u32 pos = BASE_OFFSET;
+	u8 *p = buf + 0x200;
+	int num = 0;
+
+	while(!strncmp((char*)p, "DIFI", 4)) {
+		if (num == part_no) {
+			return buf + pos;
+		}
+
+		pos += *(u32*)(p + 0xa4);
+
+		p += 0x130;
+
+		num++;
+	}
+
+	return NULL;	
+}
+
+int fs_num_partition(u8 *buf) {
+	u8 *p = buf + 0x200;
+	int num = 0;
+
+	while(!strncmp((char*)p, "DIFI", 4)) {
+		num++;
+		p += 0x130;
+	}
+
+	return num;
+}
+
+u32 fs_get_offset(u8 *buf) {
+	return *(u32*)(buf + FST_OFFSET);
+}
+
+int fs_get_start(u8 *part) {
 	u32 block_offset, fst_offset;
 
-	block_offset = *(u32*)(buf + SAVE_OFFSET + FST_BLOCK_OFFSET);
-	fst_offset   = *(u32*)(buf + SAVE_OFFSET + FST_OFFSET);
+	block_offset = *(u32*)(part + FST_BLOCK_OFFSET);
+	fst_offset   = *(u32*)(part + FST_OFFSET);
 
-	return SAVE_OFFSET + (block_offset * 0x200) + fst_offset;
+	return (block_offset * 0x200) + fst_offset;
 }
 
-int fs_num_entries(u8 *buf) {
-	u32 *p = (u32*)(buf + fs_get_start(buf));
+int fs_num_entries(u8 *part) {
+	u32 *p = (u32*)(part + fs_get_start(part));
 
 	return p[0];
 }

@@ -55,6 +55,8 @@ int main(int argc, char *argv[]) {
 	printf("** FUSE GO! **\n");
 #endif
 
+//	printf("num_part: %d\n", fs_num_partition(out_buf));
+
 	return fuse_sav_init(out_buf, size - 0x1000, fargc, fargv);
 
 	return 0;
