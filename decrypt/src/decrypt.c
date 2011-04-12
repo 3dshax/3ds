@@ -8,7 +8,6 @@
 
 #define XORPAD_SIZE	512
 #define SECTOR_SIZE	0x1000
-#define FS_OFFSET	0x3000
 
 #define DEBUG
 
