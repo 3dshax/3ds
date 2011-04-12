@@ -129,13 +129,24 @@ void parse_fs(void* buf, char* target_dir){
 	uint16_t fst_base = *((uint16_t*)&buffer[FST_BASE_OFFSET]);
 	uint32_t fst_offset = (*((uint32_t*)&buffer[FST_OFF_OFFSET])) * FS_BLOCK_SIZE;
 	entries = (struct fs_entry*)(&buffer[fst_offset + fst_base]);
-	nr_entries = entries->node_cnt - 1;
-	
+	nr_entries = entries->node_cnt;
+
+	if(nr_entries < 2){
+		fprintf(stderr, "Filesystem contains no file nodes.\n");
+		return;
+	}
+
 	// Skip the root node
 	entries++;
+	nr_entries--;
 
 #ifdef DEBUG
 	for(int i = 0; i < nr_entries; i++){
+		if(entries[i].magic != FILE_MAGIC){
+			fprintf(stderr, "fs_entry %d did not have file magic.\n", i);
+			return;
+		}
+		
 		fprintf(stderr, "File: %s, size: %u bytes, block_nr: %u\n",
 			entries[i].filename,
 			(unsigned int)entries[i].size,
@@ -149,6 +160,11 @@ void parse_fs(void* buf, char* target_dir){
 
 	char filename[256];
 	for(int i = 0; i < nr_entries; i++){
+		if(entries[i].magic != FILE_MAGIC){
+			fprintf(stderr, "fs_entry %d did not have file magic.\n", i);
+			break;
+		}
+
 		snprintf(filename, sizeof(filename), "%s/%s", target_dir, entries[i].filename);
 		FILE* fp = fopen(filename, "wb");
 		if(!fp){
