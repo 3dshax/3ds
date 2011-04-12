@@ -26,7 +26,7 @@ int fuse_sav_init(u8 *buf, u32 size, int argc, char *argv[]) {
 	sav_buf = malloc(size);
 	memcpy(sav_buf, buf, size);
 
-  return fuse_main(argc, argv, &sav_operations);
+	return fuse_main(argc, argv, &sav_operations);
 }
 
 int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) {
@@ -60,7 +60,7 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 	memset(stbuf, 0, sizeof(struct stat));
 
 	if (strcmp(path, "/") == 0) {
-		stbuf->st_mode = S_IFDIR | 0400;
+		stbuf->st_mode = S_IFDIR | 0444;
 		stbuf->st_nlink = 2; // always 2 since we dont do subdirs yet
 	} else {
 		e = fs_get_by_name(sav_buf, path + 1);
@@ -68,7 +68,7 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 		if (e == NULL)
 			return -ENOENT;
 
-		stbuf->st_mode = S_IFREG | 0400;
+		stbuf->st_mode = S_IFREG | 0444;
 		stbuf->st_nlink = 1;
 		stbuf->st_size = e->size;
 	}
@@ -109,7 +109,7 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 	if (offset+size > e->size)
 		size = e->size - offset;
 
-	memcpy(buf, sav_buf, size);
+	memcpy(buf, sav_buf + 0x3000 + fs_get_offset(sav_buf) + (e->block_no * 0x200) + offset, size);
 
 	return size;
 }
