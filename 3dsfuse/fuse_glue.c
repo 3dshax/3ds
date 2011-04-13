@@ -8,6 +8,7 @@
 #include "fuse_glue.h"
 #include "fs.h"
 #include "types.h"
+#include "helper.h"
 
 /** icky globals **/
 u8 *sav_buf;
@@ -36,13 +37,14 @@ u32 path_to_idx(const char *path) {
 
 u8 *path_to_part(const char *path) {
 	int i;
-	char name_buf[10];
+	char name_buf[16];
 
 	// determine partition
 	for(i = 0; i < fs_num_partition(sav_buf); i++) {
 		sprintf(name_buf, "/part_%02x/", i);
-		if (strncmp(name_buf, path, 9) != 0)
+		if (strncmp(name_buf, path, 9) == 0) {
 			return fs_part(i, sav_buf); 
+		}
 	}
 
 	return NULL;
@@ -62,13 +64,13 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 	char name_buf[0x11];
 	fst_entry *entries;
 	int i, j;
-	u8 *part, *part_info;
+	u8 *part;
 
 	// root?
-	if (strcmp(path, "/") == 0) { 
+	if (strcmp(path, "/") == 0) { 	
 		filler(buf, ".", NULL, 0);
 		filler(buf, "..", NULL, 0);
-		
+
 		for(i = 0; i < fs_num_partition(sav_buf); i++) {
 			sprintf(name_buf, "part_%02x", i);
 			filler(buf, name_buf, NULL, 0); 
@@ -81,20 +83,28 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 
 	for(i = 0; i < fs_num_partition(sav_buf); i++) {
 		sprintf(name_buf, "/part_%02x", i);
-		if (strcmp(name_buf, path) != 0)
+		if (strncmp(name_buf, path, 8) != 0)
 			continue;
 
 		part = fs_part(i, sav_buf);
-		part_info = fs_part_get_info(sav_buf, i); 
+
+		filler(buf, ".", NULL, 0);
+		filler(buf, "..", NULL, 0);
+
+		if (strncmp(part, "SAVE", 4) != 0) {
+			printf("skipping invalid partition %d\n", i);
+			hexdump(part, 0x100);
+			continue;
+		}
 	
 		// skip over root entry
-		entries = (fst_entry*)(part + fs_get_start(part, part_info) + sizeof(fst_entry));
+		entries = (fst_entry*)(part + fs_get_start(part) + sizeof(fst_entry));
 
-		for(j = 0; j < fs_num_entries(part, part_info)-1; j++) {
-			printf("!!!!! FOUND: '%s'\n", entries[i].name);
+		for(j = 0; j < fs_num_entries(part)-1; j++) {
 			memset(name_buf, 0, 0x11);
-			memcpy(name_buf, entries[i].name, 0x10);
+			memcpy(name_buf, entries->name, 0x10);
 			filler(buf, name_buf, NULL, 0);
+			entries++;
 		}
 	}
 
@@ -108,35 +118,25 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 
 	if (strcmp(path, "/") == 0) {
 		stbuf->st_mode = S_IFDIR | 0444;
-		stbuf->st_nlink = 2;// + fs_num_partition(sav_buf); // always 2 since we dont do subdirs yet
-	} else if (strncmp(path, "/part_", 6) == 0) {
+		stbuf->st_nlink = 2 + fs_num_partition(sav_buf); // always 2 since we dont do subdirs yet
+	} else if (strncmp(path, "/part_", 6) == 0 && strlen(path) == 8) {
 		stbuf->st_mode = S_IFDIR | 0444;
+		stbuf->st_nlink = 2;
+	} else if (strcmp(path, "/clean.sav") == 0) {
+		stbuf->st_size = sav_size;
+		stbuf->st_mode = S_IFREG | 0444;
 		stbuf->st_nlink = 1;
 	} else {
+		e = fs_get_by_name(path_to_part(path), path + 9);
 
-		if (strcmp(path, "/clean.sav") == 0) {
-			stbuf->st_size = sav_size;
-		} else {
-
-			e = fs_get_by_name(path_to_part(path), fs_part_get_info(sav_buf, path_to_idx(path)), path + 9);
-
-			if (e == NULL)
-				return -ENOENT;
-
-			stbuf->st_size = e->size;
+		if (e == NULL) {
+			return -ENOENT;
 		}
 
+		stbuf->st_size = e->size;
 		stbuf->st_mode = S_IFREG | 0444;
 		stbuf->st_nlink = 1;
 	}
-
-	/* else {
-		stbuf->st_size = 1337;
-		stbuf->st_mode = S_IFREG | 0444;
-		stbuf->st_nlink = 1;
-	}*/
-
-	printf("attr_end\n");
 
 	return 0;
 }
@@ -155,7 +155,7 @@ int sav_open(const char *path, struct fuse_file_info *fi) {
 	if (part == NULL)
 		return -ENOENT;
 
-	e = fs_get_by_name(part, fs_part_get_info(sav_buf, path_to_idx(path)), path + 9);
+	e = fs_get_by_name(part, path + 9);
 
 	if (e == NULL)
 		return -ENOENT;
@@ -179,7 +179,7 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 		return size;
 	}
 
-	e = fs_get_by_name(sav_buf, fs_part_get_info(sav_buf, path_to_idx(path)), path + 9);
+	e = fs_get_by_name(sav_buf, path + 9);
 
 	if (e == NULL)
 		return -ENOENT;
