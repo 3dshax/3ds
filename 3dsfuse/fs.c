@@ -59,10 +59,6 @@ u32 fs_get_offset(u8 *buf) {
 
 int fs_get_start(u8 *part) {
 	u32 block_offset, fst_offset;
-	u32 pos = BASE_OFFSET;
-	u32 *info;
-	u8 *p;
-	int i;
 
 	block_offset = *(u32*)(part + FST_BLOCK_OFFSET);
 	fst_offset   = *(u32*)(part + FST_OFFSET);

@@ -91,7 +91,7 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 		filler(buf, ".", NULL, 0);
 		filler(buf, "..", NULL, 0);
 
-		if (strncmp(part, "SAVE", 4) != 0) {
+		if (strncmp((char*)part, "SAVE", 4) != 0) {
 			printf("skipping invalid partition %d\n", i);
 			hexdump(part, 0x100);
 			continue;
@@ -144,7 +144,6 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 int sav_open(const char *path, struct fuse_file_info *fi) {
 	fst_entry *e;
 	u8 *part = NULL;
-	char name_buf[10];
 
 	if (strcmp(path, "/clean.sav") == 0) {
 		return 0;

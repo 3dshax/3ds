@@ -1,4 +1,8 @@
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
 #include <openssl/evp.h>
+
 #include "types.h"
 
 void md5_print(u8 *buf) {

@@ -68,7 +68,7 @@ int journal_get_size(u8 *buf) {
 }
 
 int rearrange(u8 *buf, u8 *out, int size) {
-	int i, j, blockmap_size, journal_size;
+	int i, blockmap_size, journal_size;
 
 	blockmap_entry *blockmap;
 	journal_entry *journal;
