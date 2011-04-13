@@ -23,18 +23,16 @@ u8 *fs_part_get_info(u8 *buf, u32 part_no) {
 
 u8 *fs_part(u32 part_no, u8 *buf) {
 	u32 pos = BASE_OFFSET;
-	u8 *p = buf + 0x200;
+	u8 *p = buf + 0x200;// (part_no*0x130);
 	int num = 0;
 
-	while(!strncmp((char*)p, "DIFI", 4)) {
-		if (num == part_no) {
-			return buf + pos + *(u32*)(p+0x9c);
-		}
+	while(strncmp((char*)p, "DIFI", 4) == 0) {
+		if(num == part_no)
+			return buf + pos + *(u32*)(p + 0x9c);
 
-		pos += *(u32*)(p + 0xa4);
-
+		pos += *(u32*)(p + 0xa4) + *(u32*)(p + 0x9c);
+	
 		p += 0x130;
-
 		num++;
 	}
 

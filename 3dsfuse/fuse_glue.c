@@ -172,13 +172,15 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
                       struct fuse_file_info *fi) {
 
 	fst_entry *e;
+	u8 *part;
 	
 	if (strcmp(path, "/clean.sav") == 0) {
 		memcpy(buf, sav_buf + offset, size);
 		return size;
 	}
 
-	e = fs_get_by_name(sav_buf, path + 9);
+	part = path_to_part(path);
+	e = fs_get_by_name(part, path + 9);
 
 	if (e == NULL)
 		return -ENOENT;
