@@ -10,10 +10,10 @@
 #define SECTOR_SIZE	0x1000
 
 #define DEBUG
+#define SEGHER
 
 int do_wearlevel = 0;
 int do_decrypt = 0;
-int do_analysis = 0;
 int do_filesys = 0;
 
 size_t file_size(FILE* fp){
@@ -25,7 +25,7 @@ size_t file_size(FILE* fp){
 }
 
 void decrypt(void* buf, size_t size, void* xorpad){
-	for(int i = SECTOR_SIZE; i < size; i++)
+	for(int i = 0; i < size; i++)
 		((uint8_t*)buf)[i] ^= ((uint8_t*)xorpad)[i % XORPAD_SIZE];		
 }
 
@@ -65,16 +65,39 @@ int wearlevel(void* buffer, size_t size, void* dest){
 
 #ifdef DEBUG
 	for(int i = 0; i < num_entries; i++){
-		printf("virt: %d phys: %d, cnt: %d\n", 
+		printf("virt: %d phys: %d, cnt: %d, ", 
 				entries[i].virt_sec,
 				entries[i].phys_sec,
 				entries[i].virt_realloc_cnt);
+		printf("chksums: ");
+		for(int j = 0; j < sizeof(entries[i].chksums); j++)
+			printf("%02X ", entries[i].chksums[j]);
+		printf("\n");
 	}
 #endif /* DEBUG */
 
-	for(int i = 0; i < num_entries; i++)
+	for(int i = 0; i < num_entries; i++){
 		memcpy(&((uint8_t*)dest)[SECTOR_SIZE * i], &buf[SECTOR_SIZE * entries[i].phys_sec], SECTOR_SIZE);
 
+#ifdef SEGHER		
+		for(int j = 0; j < 8; j++){
+			char filename[256];
+			if(entries[i].chksums[j]){
+				snprintf(filename, sizeof(filename), "block_%02X_%02X%02X%02X%02X)",
+				entries[i].chksums[j],
+				buf[(SECTOR_SIZE * entries[i].phys_sec) + j * 0x200],
+				buf[(SECTOR_SIZE * entries[i].phys_sec) + j * 0x200 + 1],
+				buf[(SECTOR_SIZE * entries[i].phys_sec) + j * 0x200 + 2],
+				buf[(SECTOR_SIZE * entries[i].phys_sec) + j * 0x200 + 3]);
+			
+				FILE* out = fopen(filename, "wb");
+				fwrite(&buf[(SECTOR_SIZE * entries[i].phys_sec) + j * 0x200], 1, 0x200, out);
+				fclose(out);
+			}
+		}
+#endif
+
+	}
 	return 0;
 }
 
@@ -171,16 +194,13 @@ void parse_fs(void* buf, char* target_dir){
 			fprintf(stderr, "Failed to open %s\n", filename);
 			continue;
 		}
+
 		fwrite(&buffer[fst_base + (entries[i].block_nr * FS_BLOCK_SIZE)],
 			1,
 			entries[i].size,
 			fp);
 		fclose(fp);
 	}	
-}
-
-void analyze(void* buf, size_t size){
-
 }
 
 int main(int argc, char** argv){
@@ -200,8 +220,6 @@ int main(int argc, char** argv){
 	} else if(!strcmp("wearlevel", argv[1])){
 		do_decrypt = 1;
 		do_wearlevel = 1;
-	} else if(!strcmp("analyze", argv[1])){
-		do_analysis = 1;
 	} else if(!strcmp("filesystem", argv[1])){
 		do_decrypt = 1;
 		do_wearlevel = 1;
@@ -232,20 +250,21 @@ int main(int argc, char** argv){
 	}	
 	fclose(fp);
 
-	if(do_analysis){
-		analyze(buf, size);
+
+	void* decrypt_ptr = buf + SECTOR_SIZE;
+	void* write_ptr = buf;
+
+	if(do_wearlevel){	
+		wearlevel_buf = calloc(1, size - SECTOR_SIZE);
+		if(wearlevel(buf, size, wearlevel_buf) < 0)
+			goto exit;
+		size -= SECTOR_SIZE;
+		decrypt_ptr = wearlevel_buf;
+		write_ptr = wearlevel_buf;
 	}
 
 	if(do_decrypt){
-		void* write_pointer = buf;
-		decrypt(buf, size, xorpad);
-		if(do_wearlevel){
-			wearlevel_buf = calloc(1, size - XORPAD_SIZE);
-			if(wearlevel(buf, size, wearlevel_buf) < 0)
-				goto exit;
-			write_pointer = wearlevel_buf;
-			size -= SECTOR_SIZE;
-		}
+		decrypt(decrypt_ptr, size, xorpad);
 		
 		if(do_wearlevel && do_filesys){
 			parse_partitions(wearlevel_buf, argv[4]);
@@ -256,7 +275,7 @@ int main(int argc, char** argv){
 				goto exit;
 			}
 
-			fwrite(write_pointer, 1, size, fp);
+			fwrite(write_ptr, 1, size, fp);
 			fclose(fp);
 		}
 	}
