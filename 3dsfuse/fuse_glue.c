@@ -12,6 +12,7 @@
 
 /** icky globals **/
 u8 *sav_buf;
+u8 *key_buf;
 u32 sav_size=0;
 
 static struct fuse_operations sav_operations = {
@@ -50,12 +51,15 @@ u8 *path_to_part(const char *path) {
 	return NULL;
 }
 
-int fuse_sav_init(u8 *buf, u32 size, int argc, char *argv[]) {
+int fuse_sav_init(u8 *buf, u32 size, u8 *key, int argc, char *argv[]) {
 	// lets keep this locally for the FUSE driver, these
 	// images arent very huge anyway
 	sav_buf = malloc(size);
 	sav_size = size;
 	memcpy(sav_buf, buf, size);
+
+	key_buf = malloc(0x200);
+	memcpy(key_buf, key, 0x200);
 
 	return fuse_main(argc, argv, &sav_operations);
 }
@@ -77,6 +81,7 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 		}
 
 		filler(buf, "clean.sav", NULL, 0);
+		filler(buf, "key.bin", NULL, 0);
 
 		return 0;
 	} 
@@ -96,11 +101,14 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 			hexdump(part, 0x100);
 			continue;
 		}
-	
+
+		printf("@@ part %d valid\n", i);
+		
 		// skip over root entry
 		entries = (fst_entry*)(part + fs_get_start(part) + sizeof(fst_entry));
 
 		for(j = 0; j < fs_num_entries(part)-1; j++) {
+			printf("@@ name: '%s'\n", entries->name);
 			memset(name_buf, 0, 0x11);
 			memcpy(name_buf, entries->name, 0x10);
 			filler(buf, name_buf, NULL, 0);
@@ -116,6 +124,9 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 
 	memset(stbuf, 0, sizeof(struct stat));
 
+	stbuf->st_mode = S_IFREG | 0444;
+	stbuf->st_nlink = 1;
+
 	if (strcmp(path, "/") == 0) {
 		stbuf->st_mode = S_IFDIR | 0444;
 		stbuf->st_nlink = 2 + fs_num_partition(sav_buf); // always 2 since we dont do subdirs yet
@@ -124,8 +135,8 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 		stbuf->st_nlink = 2;
 	} else if (strcmp(path, "/clean.sav") == 0) {
 		stbuf->st_size = sav_size;
-		stbuf->st_mode = S_IFREG | 0444;
-		stbuf->st_nlink = 1;
+	} else if (strcmp(path, "/key.bin") == 0) {
+		stbuf->st_size = 512;
 	} else {
 		e = fs_get_by_name(path_to_part(path), path + 9);
 
@@ -134,9 +145,9 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 		}
 
 		stbuf->st_size = e->size;
-		stbuf->st_mode = S_IFREG | 0444;
-		stbuf->st_nlink = 1;
 	}
+
+	printf("@@ stat done\n");
 
 	return 0;
 }
@@ -146,6 +157,10 @@ int sav_open(const char *path, struct fuse_file_info *fi) {
 	u8 *part = NULL;
 
 	if (strcmp(path, "/clean.sav") == 0) {
+		return 0;
+	}
+
+	if (strcmp(path, "/key.bin") == 0) {
 		return 0;
 	}
 
@@ -176,6 +191,11 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 	
 	if (strcmp(path, "/clean.sav") == 0) {
 		memcpy(buf, sav_buf + offset, size);
+		return size;
+	}
+
+	if (strcmp(path, "/key.bin") == 0) {
+		memcpy(buf, key_buf + offset, size);
 		return size;
 	}
 

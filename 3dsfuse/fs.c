@@ -52,7 +52,7 @@ int fs_num_partition(u8 *buf) {
 }
 
 u32 fs_get_offset(u8 *buf) {
-	return *(u32*)(buf + FST_OFFSET);
+	return *(u16*)(buf + FST_OFFSET);
 }
 
 int fs_get_start(u8 *part) {
