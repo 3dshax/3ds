@@ -10,7 +10,6 @@
 #define SECTOR_SIZE	0x1000
 
 #define DEBUG
-#define SEGHER
 
 int do_wearlevel = 0;
 int do_decrypt = 0;
