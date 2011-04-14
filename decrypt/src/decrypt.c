@@ -35,17 +35,8 @@ int wearlevel(void* buffer, size_t size, void* dest){
 	struct long_sector_entry *sectors = (struct long_sector_entry*)buffer;
 
 	// Find the start
-	while(sectors->magic != SECTOR_MAGIC)
-		sectors++;
-	int num_entries = ((((void*)sectors) - buffer) / sizeof(struct header_entry));
+	int num_entries = (size / SECTOR_SIZE) - 1;
 	entries = calloc(num_entries, sizeof(*entries));
-	num_entries--;
-
-	// Sanity check the entries with the size
-	if(((num_entries + 1) * SECTOR_SIZE) != size){
-		fprintf(stderr, "Filesize does not match flash size.\n");
-		return -1;
-	}
 
 	// Populate the base state
 	struct header_entry *header = (struct header_entry*)buf;
@@ -76,8 +67,11 @@ int wearlevel(void* buffer, size_t size, void* dest){
 #endif /* DEBUG */
 
 	for(int i = 0; i < num_entries; i++){
-		memcpy(&((uint8_t*)dest)[SECTOR_SIZE * i], &buf[SECTOR_SIZE * entries[i].phys_sec], SECTOR_SIZE);
-
+		if(entries[i].phys_sec * SECTOR_SIZE < size){
+			memcpy(&((uint8_t*)dest)[SECTOR_SIZE * i], &buf[SECTOR_SIZE * entries[i].phys_sec], SECTOR_SIZE);
+		} else {
+			fprintf(stderr, "Illegal physical sector (%d) in blockmap (%d)\n", entries[i].phys_sec, i);
+		}
 #ifdef SEGHER		
 		for(int j = 0; j < 8; j++){
 			char filename[256];
