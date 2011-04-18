@@ -1,8 +1,8 @@
 CC=gcc
 INCLUDES=include
 CFLAGS=-c -Wall -O2 -std=c99
-LDFLAGS=
-SOURCES=src/decrypt.c
+LDFLAGS=-lcrypto
+SOURCES=src/decrypt.c src/utils.c
 OBJECTS=$(SOURCES:.c=.o)
 EXECUTABLE=decrypt
 
