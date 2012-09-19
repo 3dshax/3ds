@@ -30,7 +30,7 @@ typedef struct {
 	u32 magic;//"DIFI"
 	u32 magicnum;//0x10000
 
-	u64 ivfc_offset;//relative to this DIFI
+	u64 ivfc_offset;//Relative to this DIFI
 	u64 ivfc_size;
 	u64 dpfs_offset;
 	u64 dpfs_size;
@@ -43,7 +43,7 @@ typedef struct {
 typedef struct {
 	u32 magic;//"IVFC"
 	u32 magicnum;//0x20000
-	u64 masterhash_size;//size of the hash which hashes lvl1
+	u64 masterhash_size;//Size of the hash which hashes lvl1
 
 	u64 lvl1_offset;
 	u64 lvl1_size;
@@ -109,7 +109,7 @@ int fs_num_entries(u8 *buf);
 u32 fs_get_start(u8 *buf);
 u32 fs_get_offset(u8 *buf);
 u8 *fs_part_get_info(u8 *buf, u32 part_no);
-u8 *fs_part(u8 *buf);
+u8 *fs_part(u8 *buf, int fs);
 u8 *fs_getfilebase();
 fst_entry *fs_get_by_name(u8 *part, const char *name);
 int fs_num_partition(u8 *buf);
