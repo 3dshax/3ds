@@ -13,7 +13,7 @@
 
 int main(int argc, char *argv[]) {
 	FILE *f;
-	u8 *save_buf, *out_buf, keybuf[0x200];
+	u8 *save_buf, *out_buf, xorpad_buf[0x200];
 	unsigned int size=0;
 	int i;
 
@@ -21,6 +21,10 @@ int main(int argc, char *argv[]) {
 	char **fargv;
 
 	f = fopen(argv[1], "rb");
+	if(f == NULL) {
+		fprintf(stderr, "error: failed to open %s\n", argv[1]);
+		return -1;
+	}
 
 	fseek(f, 0, SEEK_END);
 	size = ftell(f);
@@ -31,13 +35,13 @@ int main(int argc, char *argv[]) {
 
 	fclose(f);
 
-	if (find_key(save_buf, size, keybuf) == -1) {
-		fprintf(stderr, "error: could not find key block :(\n");
+	if (find_key(save_buf, size, xorpad_buf) == -1) {
+		fprintf(stderr, "error: could not find xorpad block :(\n");
 		return -1;
 	}
 
 	rearrange(save_buf, out_buf, size);
-	xor(out_buf, size - 0x1000, NULL, keybuf, 0x200);
+	xor(out_buf, size - 0x1000, NULL, xorpad_buf, 0x200);
 
 	fargc = argc - 1;
 	fargv = (char **) malloc(fargc * sizeof(char *));	
@@ -57,7 +61,7 @@ int main(int argc, char *argv[]) {
 
 //	printf("num_part: %d\n", fs_num_partition(out_buf));
 
-	return fuse_sav_init(out_buf, size - 0x1000, keybuf, fargc, fargv);
+	return fuse_sav_init(out_buf, size - 0x1000, xorpad_buf, fargc, fargv);
 
 	return 0;
 }
