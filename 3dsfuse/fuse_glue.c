@@ -41,7 +41,7 @@ u8 *path_to_part(const char *path) {
 		return NULL; 
 	}
 
-	return fs_part(sav_buf);
+	return fs_part(sav_buf, 1, 0);
 }
 
 int fuse_sav_init(u8 *buf, u32 size, u8 *xorpad, int argc, char *argv[]) {
@@ -70,7 +70,7 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 		filler(buf, ".", NULL, 0);
 		filler(buf, "..", NULL, 0);
 
-		part = fs_part(sav_buf);
+		part = fs_part(sav_buf, 1, 0);
 		if(part) {
 			if (strncmp((char*)part, "SAVE", 4) != 0) {
 				printf("SAVE partition is invalid.\n");
@@ -88,7 +88,7 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 	} 
 
 	if (strncmp(path, "/part_00", 8) == 0) {
-		part = fs_part(sav_buf);
+		part = fs_part(sav_buf, 1, 0);
 		if(part == NULL)return -ENOENT;
 
 		filler(buf, ".", NULL, 0);
@@ -129,7 +129,7 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 		stbuf->st_mode = S_IFDIR | 0444;
 		stbuf->st_nlink = 2 + fs_num_partition(sav_buf); // always 2 since we dont do subdirs yet
 	} else if (strncmp(path, "/part_", 6) == 0 && strlen(path) == 8) {
-		if(fs_part(sav_buf) == NULL)return -ENOENT;
+		if(fs_part(sav_buf, 1, 0) == NULL)return -ENOENT;
 		stbuf->st_mode = S_IFDIR | 0444;
 		stbuf->st_nlink = 2;
 	} else if (strcmp(path, "/clean.sav") == 0) {
@@ -137,7 +137,7 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 	} else if (strcmp(path, "/key.bin") == 0) {
 		stbuf->st_size = 512;
 	} else {
-		part = fs_part(sav_buf);
+		part = fs_part(sav_buf, 1, 0);
 		if(part == NULL)return -ENOENT;
 
 		if (strncmp((char*)part, "SAVE", 4) != 0) {
@@ -201,6 +201,7 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 
 	fst_entry *e;
 	u8 *part;
+	u32 saveoff;
 	
 	if (strcmp(path, "/clean.sav") == 0) {
 		memcpy(buf, sav_buf + offset, size);
@@ -227,7 +228,11 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 	if (offset+size > e->size)
 		size = e->size - offset;
 
-	memcpy(buf, fs_getfilebase() + (e->block_no * 0x200) + offset, size);
+	saveoff = (e->block_no * 0x200) + offset;
+
+	if(fs_verifyhashtree_fsdata(saveoff, size, 1))return -EIO;
+
+	memcpy(buf, fs_getfilebase() + saveoff, size);
 
 	return size;
 }

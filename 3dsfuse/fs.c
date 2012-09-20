@@ -38,17 +38,14 @@ int fs_initsave(u8 *nsav) {
 	savectx.sav = nsav;
 	magic = *((u32*)&nsav[0x100]);
 
-	if(magic == 0x41534944)
-	{
+	if(magic == 0x41534944) {
 		if(fs_initsave_disa())return 1;
 	}
-	else if(magic == 0x46464944)
-	{
+	else if(magic == 0x46464944) {
 		printf("extdata DIFF is not yet supported.\n");
 		return 1;
 	}
-	else
-	{
+	else {
 		printf("unknown magic %x @ 0x100.\n", magic);
 		return 1;
 	}
@@ -88,17 +85,15 @@ int fs_initsave_checkhashes()
 	u8 calchash[0x20];
 
 	sha256(&savectx.sav[savectx.activepart_tableoffset], savectx.part_tablesize, calchash);
-	if(memcmp(savectx.activepart_tablehash, calchash, 0x20)!=0)
-	{
+	if(memcmp(savectx.activepart_tablehash, calchash, 0x20)!=0) {
 		printf("active table hash from header is invalid.\n");
 		return 2;
 	}
 
 	table = (partition_table*)&savectx.sav[savectx.activepart_tableoffset];
-	part = fs_part(savectx.sav, 0);
+	part = fs_part(savectx.sav, 0, 0);
 
-	if(table == NULL || part == NULL)
-	{
+	if(table == NULL || part == NULL) {
 		printf("invalid partition.\n");
 		return 0;
 	}
@@ -107,8 +102,7 @@ int fs_initsave_checkhashes()
 
 	blksz = 1 << table->ivfc.lvl1_blksize;
 	lvl1_buf = (u8*)malloc(blksz);
-	if(lvl1_buf==NULL)
-	{
+	if(lvl1_buf==NULL) {
 		printf("failed to allocate level1 buffer.\n");
 		return 3;
 	}
@@ -118,8 +112,7 @@ int fs_initsave_checkhashes()
 	sha256(lvl1_buf, blksz, calchash);
 	free(lvl1_buf);
 
-	if(memcmp(table->ivfcpart_masterhash, calchash, 0x20)!=0)
-	{
+	if(memcmp(table->ivfcpart_masterhash, calchash, 0x20)!=0) {
 		printf("master hash over the IVFC partition is invalid.\n");
 		return 2;
 	}
@@ -127,30 +120,32 @@ int fs_initsave_checkhashes()
 	return 0;
 }
 
-u8 *fs_part_get_info(u8 *buf, u32 part_no) {
-	return buf + savectx.activepart_tableoffset + (part_no * 0x130);
+partition_table *fs_part_get_info(u8 *buf, u32 part_no) {
+	return (partition_table*)(buf + savectx.activepart_tableoffset + (part_no * 0x130));
 }
 
-u8 *fs_part(u8 *buf, int fs) {
+u8 *fs_part(u8 *buf, int fs, int datapart) {
 	u64 pos = 0;
 	u8 *p = buf + savectx.primary_tableoffset;
 	partition_table *part = (partition_table*)p;
 	int num = 0;
 
-	pos = savectx.savepart_offset + part->dpfs.ivfcpart_offset;
+	if(!datapart)pos = savectx.savepart_offset;
+	if(datapart)pos = savectx.datapart_offset;
+	pos += part->dpfs.ivfcpart_offset;
 
 	for(num=0; num<2; num++) {
 		if(num==1)p = buf + savectx.secondary_tableoffset;
+		if(datapart)p += 0x130;
 
 		part = (partition_table*)p;
-		if(part->difi.magic != 0x49464944)
-		{
+		if(part->difi.magic != 0x49464944) {
 			printf("invalid DIFI magic.\n");
 			return NULL;
 		}
 
-		if(num == (int)savectx.activepart_table)
-		{
+		if(num == (int)savectx.activepart_table) {
+			//printf("datapart %x pos %llx ivfcpartsize %llx\n", datapart, pos, part->dpfs.ivfcpart_size);
 			if(!fs)return buf + pos;
 			return buf + pos + part->ivfc.fs_offset;
 		}
@@ -169,9 +164,8 @@ u8 *fs_getfilebase()
 {
 	u8 *part;
 
-	if(savectx.datapart_offset==0)
-	{
-		part = fs_part(savectx.sav, 1);
+	if(savectx.datapart_offset==0) {
+		part = fs_part(savectx.sav, 1, 0);
 		return part + fs_get_offset(part);
 	}
 
@@ -222,3 +216,52 @@ fst_entry *fs_get_by_name(u8 *part, const char *name) {
 
 	return NULL;
 }
+
+int fs_verifyhashtree_fsdata(u32 offset, u32 size, int filedata)
+{
+	u8 *ivfcpart;
+	u8 *part;
+	partition_table *table;
+	u32 curpos = 0;
+	u32 cursize = 0;
+	u32 hashpos = 0;
+	u32 blksz;
+
+	u8 calchash[0x20];
+
+	if(savectx.datapart_offset==0) {
+		part = fs_part(savectx.sav, 1, 0);
+		offset += fs_get_offset(part);
+
+		ivfcpart = fs_part(savectx.sav, 0, 0);
+		table = fs_part_get_info(savectx.sav, 0);
+	}
+	else {
+		part = savectx.sav + (savectx.datapart_offset + savectx.datapart_filebase);
+		table = fs_part_get_info(savectx.sav, 1);
+
+		ivfcpart = fs_part(savectx.sav, 0, 1);
+	}
+
+	blksz = 1 << table->ivfc.fs_blksize;
+	curpos = offset;
+
+	curpos >>= table->ivfc.fs_blksize;
+	hashpos = curpos * 0x20;
+	curpos <<= table->ivfc.fs_blksize;
+
+	while(cursize < size) {
+		sha256(&part[curpos], blksz, calchash);
+		if(memcmp(ivfcpart + (u32)table->ivfc.lvl3_offset + hashpos, calchash, 0x20)!=0) {
+			printf("filesystem hash entry is invalid, offset %x align %x hashpos %x blksz %x\n", offset, curpos, hashpos, blksz);
+			return 2;
+		}
+
+		cursize += blksz;
+		curpos += blksz;
+		hashpos += 0x20;
+	}
+
+	return 0;
+}
+
