@@ -19,7 +19,8 @@ static struct fuse_operations sav_operations = {
 	.getattr = sav_getattr,
 	.readdir = sav_readdir,
 	.open    = sav_open,
-	.read    = sav_read
+	.read    = sav_read,
+	.write   = sav_write
 };
 
 u32 path_to_idx(const char *path) {
@@ -187,14 +188,11 @@ int sav_open(const char *path, struct fuse_file_info *fi) {
 	if (e == NULL)
 		return -ENOENT;
 
-	// this driver is readonly for now
-	// we are lacking *lots* of information to do a proper rebuild of the flash image
 	if((fi->flags & 3) != O_RDONLY)
 		return -EACCES;
 
 	return 0;
 }
-
 
 int sav_read(const char *path, char *buf, size_t size, off_t offset,
                       struct fuse_file_info *fi) {
@@ -230,9 +228,49 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 
 	saveoff = (e->block_no * 0x200) + offset;
 
-	if(fs_verifyhashtree_fsdata(saveoff, size, 1))return -EIO;
+	if(fs_verifyhashtree_fsdata(saveoff, size, 1, 0))return -EIO;
 
 	memcpy(buf, fs_getfilebase() + saveoff, size);
 
 	return size;
 }
+
+int sav_write(const char *path, const char *buf, size_t size, off_t offset,
+                      struct fuse_file_info *fi) {
+
+	fst_entry *e;
+	u8 *part;
+	u32 saveoff;
+	
+	if (strcmp(path, "/clean.sav") == 0)
+		return -EINVAL;
+
+	if (strcmp(path, "/key.bin") == 0)
+		return -EINVAL;
+
+	part = path_to_part(path);
+	if (part == NULL)
+		return -ENOENT;
+
+	e = fs_get_by_name(part, path + 9);
+
+	if (e == NULL)
+		return -ENOENT;
+
+	if (offset >= e->size)
+		return 0;
+
+	if (offset+size > e->size)
+		size = e->size - offset;
+
+	saveoff = (e->block_no * 0x200) + offset;
+
+	if(fs_verifyhashtree_fsdata(saveoff, size, 1, 0))return -EIO;//the hashtree must be already valid before writing any data.
+
+	memcpy(fs_getfilebase() + saveoff, buf, size);
+
+	if(fs_verifyhashtree_fsdata(saveoff, size, 1, 1))return -EIO;
+
+	return size;
+}
+

@@ -41,29 +41,18 @@ typedef struct {
 } difi_header;
 
 typedef struct {
+	u64 offset;
+	u64 size;
+	u32 blksize;
+	u32 reserved;
+} ivfclevel_header;
+
+typedef struct {
 	u32 magic;//"IVFC"
 	u32 magicnum;//0x20000
 	u64 masterhash_size;//Size of the hash which hashes lvl1
 
-	u64 lvl1_offset;
-	u64 lvl1_size;
-	u32 lvl1_blksize;
-	u32 lvl1_reserved;
-
-	u64 lvl2_offset;
-	u64 lvl2_size;
-	u32 lvl2_blksize;
-	u32 lvl2_reserved;
-
-	u64 lvl3_offset;
-	u64 lvl3_size;
-	u32 lvl3_blksize;
-	u32 lvl3_reserved;
-
-	u64 fs_offset;//level 4
-	u64 fs_size;
-	u32 fs_blksize;
-	u32 fs_reserved;
+	ivfclevel_header levels[4];
 	u64 unknown;
 } ivfc_header;
 
@@ -111,7 +100,7 @@ u32 fs_get_offset(u8 *buf);
 partition_table *fs_part_get_info(u8 *buf, u32 part_no);
 u8 *fs_part(u8 *buf, int fs, int datapart);
 u8 *fs_getfilebase();
-int fs_verifyhashtree_fsdata(u32 offset, u32 size, int filedata);
+int fs_verifyhashtree_fsdata(u32 offset, u32 size, int filedata, int update);
 
 fst_entry *fs_get_by_name(u8 *part, const char *name);
 int fs_num_entries(u8 *buf);
