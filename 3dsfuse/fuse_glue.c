@@ -169,6 +169,9 @@ int sav_open(const char *path, struct fuse_file_info *fi) {
 	}
 
 	if (strcmp(path, "/key.bin") == 0) {
+		if((fi->flags & 3) != O_RDONLY)
+			return -EACCES;
+
 		return 0;
 	}
 
@@ -187,9 +190,6 @@ int sav_open(const char *path, struct fuse_file_info *fi) {
 
 	if (e == NULL)
 		return -ENOENT;
-
-	if((fi->flags & 3) != O_RDONLY)
-		return -EACCES;
 
 	return 0;
 }
@@ -228,7 +228,7 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 
 	saveoff = (e->block_no * 0x200) + offset;
 
-	if(fs_verifyhashtree_fsdata(saveoff, size, 1, 0))return -EIO;
+	if(fs_verifyupdatehashtree_fsdata(saveoff, size, 1, 0))return -EIO;
 
 	memcpy(buf, fs_getfilebase() + saveoff, size);
 
@@ -242,8 +242,11 @@ int sav_write(const char *path, const char *buf, size_t size, off_t offset,
 	u8 *part;
 	u32 saveoff;
 	
-	if (strcmp(path, "/clean.sav") == 0)
-		return -EINVAL;
+	if (strcmp(path, "/clean.sav") == 0) {
+		memcpy(sav_buf + offset, buf, size);
+		fs_setupdateflags(0);
+		return size;
+	}
 
 	if (strcmp(path, "/key.bin") == 0)
 		return -EINVAL;
@@ -265,11 +268,11 @@ int sav_write(const char *path, const char *buf, size_t size, off_t offset,
 
 	saveoff = (e->block_no * 0x200) + offset;
 
-	if(fs_verifyhashtree_fsdata(saveoff, size, 1, 0))return -EIO;//the hashtree must be already valid before writing any data.
+	if(fs_verifyupdatehashtree_fsdata(saveoff, size, 1, 0))return -EIO;//the hashtree must be already valid before writing any data.
 
 	memcpy(fs_getfilebase() + saveoff, buf, size);
 
-	if(fs_verifyhashtree_fsdata(saveoff, size, 1, 1))return -EIO;
+	if(fs_verifyupdatehashtree_fsdata(saveoff, size, 1, 1))return -EIO;
 
 	return size;
 }

@@ -12,6 +12,7 @@
 typedef struct {
 	u8 *sav;
 	int sav_updated;
+	int mac_invalid;//When set the MAC is invalid and needs updated.
 
 	u32 total_partentries;
 	u32 savepart_offset;
@@ -38,6 +39,8 @@ int fs_initsave(u8 *nsav) {
 
 	savectx.sav = nsav;
 	savectx.sav_updated = 0;
+	savectx.mac_invalid = 0;
+
 	magic = *((u32*)&nsav[0x100]);
 
 	if(magic == 0x41534944) {
@@ -76,6 +79,12 @@ int fs_initsave_disa() {
 	memcpy(savectx.activepart_tablehash, disa->activepart_tablehash, 0x20);
 
 	return 0;
+}
+
+void fs_setupdateflags(int macinvalid)
+{
+	savectx.sav_updated = 1;
+	if(macinvalid)savectx.mac_invalid = 1;
 }
 
 int fs_checkheaderhashes(int update)
@@ -131,7 +140,11 @@ int fs_checkheaderhashes(int update)
 		}
 	}
 
-	if(updated)savectx.sav_updated = updated;
+	if(updated)
+	{
+		savectx.sav_updated = 1;
+		savectx.mac_invalid = 1;
+	}
 
 	return 0;
 }
@@ -304,7 +317,7 @@ int fs_verifyhashtree(u8 *part, u8 *hashtree, ivfc_header *ivfc, u32 offset, u32
 	return ret;
 }
 
-int fs_verifyhashtree_fsdata(u32 offset, u32 size, int filedata, int update)
+int fs_verifyupdatehashtree_fsdata(u32 offset, u32 size, int filedata, int update)
 {
 	int ret;
 	u8 *hashtree;

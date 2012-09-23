@@ -37,10 +37,16 @@ int main(int argc, char *argv[]) {
 
 	if (find_key(save_buf, size, xorpad_buf) == -1) {
 		fprintf(stderr, "error: could not find xorpad block :(\n");
+		free(save_buf);
+		free(out_buf);
 		return -1;
 	}
 
-	rearrange(save_buf, out_buf, size);
+	if(rearrange(save_buf, out_buf, size) != 0) {
+		free(save_buf);
+		free(out_buf);
+		return -2;
+	}
 	xor(out_buf, size - 0x1000, NULL, xorpad_buf, 0x200);
 
 	fargc = argc - 1;
