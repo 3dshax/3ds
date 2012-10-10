@@ -14,10 +14,12 @@
 int main(int argc, char *argv[]) {
 	FILE *f;
 	u8 *save_buf, *out_buf, xorpad_buf[0x200];
+	u8 zerobuf[0x10];
 	unsigned int size=0;
 	int i;
+	int enable_wearlevel = 1, enable_xorpad = 1;
 
-	int fargc;
+	int fargc = 1, argi = 1;
 	char **fargv;
 
 	f = fopen(argv[1], "rb");
@@ -35,37 +37,58 @@ int main(int argc, char *argv[]) {
 
 	fclose(f);
 
-	if (find_key(save_buf, size, xorpad_buf) == -1) {
-		fprintf(stderr, "error: could not find xorpad block :(\n");
-		free(save_buf);
-		free(out_buf);
-		return -1;
+	for(i = 1; i < argc - 1; i++) {
+		if(strncmp(argv[i + 1], "--", 2))fargc++;
 	}
 
-	if(rearrange(save_buf, out_buf, size) != 0) {
-		free(save_buf);
-		free(out_buf);
-		return -2;
-	}
-	xor(out_buf, size - 0x1000, NULL, xorpad_buf, 0x200);
-
-	fargc = argc - 1;
-	fargv = (char **) malloc(fargc * sizeof(char *));	
+	fargv = (char **) malloc(fargc * sizeof(char *));
 
 	fargv[0] = argv[0];
 
-	for(i = 1; i < fargc; i++) {
+	for(i = 1; i < argc - 1; i++) {
 #ifdef DEBUG
 		printf("arg: '%s'\n", argv[i + 1]);
 #endif
-		fargv[i] = argv[i + 1];
+		if(strncmp(argv[i + 1], "--nowear", 8)==0) {
+			enable_wearlevel = 0;
+		}
+		else {
+			fargv[argi] = argv[i + 1];
+			argi++;
+		}
+	}
+
+	if(enable_wearlevel) {
+		if(rearrange(save_buf, out_buf, size) != 0) {
+			free(save_buf);
+			free(out_buf);
+			return -2;
+		}
+		else {
+			size -= 0x1000;
+		}
+	}
+	else {
+		memcpy(out_buf, save_buf, size);
+	}
+
+	memset(zerobuf, 0, 0x10);
+	if(memcmp(&out_buf[0x10], zerobuf, 0x10)==0)enable_xorpad = 0;
+
+	if(enable_xorpad) {
+		if (find_key(out_buf, size, xorpad_buf) == -1) {
+			fprintf(stderr, "error: could not find xorpad block :(\n");
+			free(save_buf);
+			free(out_buf);
+			return -1;
+		}
+
+		xor(out_buf, size, NULL, xorpad_buf, 0x200);
 	}
 
 #ifdef DEBUG
 	printf("** FUSE GO! **\n");
 #endif
 
-//	printf("num_part: %d\n", fs_num_partition(out_buf));
-
-	return fuse_sav_init(out_buf, size - 0x1000, xorpad_buf, fargc, fargv);
+	return fuse_sav_init(out_buf, size, xorpad_buf, fargc, fargv);
 }

@@ -94,7 +94,7 @@ typedef struct {
 } fst_entry;
 
 int fs_initsave(u8 *nsav);
-void fs_setupdateflags(int macinvalid);
+void fs_setupdateflags();
 u32 fs_get_start(u8 *buf);
 u32 fs_get_offset(u8 *buf);
 

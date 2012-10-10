@@ -244,7 +244,7 @@ int sav_write(const char *path, const char *buf, size_t size, off_t offset,
 	
 	if (strcmp(path, "/clean.sav") == 0) {
 		memcpy(sav_buf + offset, buf, size);
-		fs_setupdateflags(0);
+		fs_setupdateflags();
 		return size;
 	}
 

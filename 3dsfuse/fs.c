@@ -12,7 +12,7 @@
 typedef struct {
 	u8 *sav;
 	int sav_updated;
-	int mac_invalid;//When set the MAC is invalid and needs updated.
+	int savetype;
 
 	u32 total_partentries;
 	u32 savepart_offset;
@@ -39,14 +39,16 @@ int fs_initsave(u8 *nsav) {
 
 	savectx.sav = nsav;
 	savectx.sav_updated = 0;
-	savectx.mac_invalid = 0;
+	savectx.savetype = 0;
 
 	magic = *((u32*)&nsav[0x100]);
 
 	if(magic == 0x41534944) {
+		savectx.savetype = 0;
 		if(fs_initsave_disa())return 1;
 	}
 	else if(magic == 0x46464944) {
+		savectx.savetype = 1;
 		printf("extdata DIFF is not yet supported.\n");
 		return 1;
 	}
@@ -81,30 +83,32 @@ int fs_initsave_disa() {
 	return 0;
 }
 
-void fs_setupdateflags(int macinvalid)
+void fs_setupdateflags()
 {
 	savectx.sav_updated = 1;
-	if(macinvalid)savectx.mac_invalid = 1;
 }
 
-int fs_checkheaderhashes(int update)
+void fs_updateheaderhash()
 {
-	int updated = 0;
+	disa_header *disa = (disa_header*)&savectx.sav[0x100];
+
+	if(savectx.savetype == 0) {
+		memcpy(disa->activepart_tablehash, savectx.activepart_tablehash, 0x20);
+	}
+}
+
+int fs_calcivfchash(partition_table *table, int datapart, int *update)
+{
 	u8 *part;
-	partition_table *table;
 	u8 *lvl1_buf;
 	u32 blksz;
 	u8 calchash[0x20];
 
-	table = (partition_table*)&savectx.sav[savectx.activepart_tableoffset];
-	part = fs_part(savectx.sav, 0, 0);
-
-	if(table == NULL || part == NULL) {
+	part = fs_part(savectx.sav, 0, datapart);
+	if(part == NULL) {
 		printf("invalid partition.\n");
-		return 0;
+		return 1;
 	}
-
-	memset(calchash, 0, 0x20);
 
 	blksz = 1 << table->ivfc.levels[0].blksize;
 	lvl1_buf = (u8*)malloc(blksz);
@@ -115,19 +119,50 @@ int fs_checkheaderhashes(int update)
 	memset(lvl1_buf, 0, blksz);
 	memcpy(lvl1_buf, part, table->ivfc.levels[0].size);
 
+	memset(calchash, 0, 0x20);
 	sha256(lvl1_buf, blksz, calchash);
 	free(lvl1_buf);
 
 	if(memcmp(table->ivfcpart_masterhash, calchash, 0x20)!=0) {
-		if(update) {
-			updated = 1;
+		if(*update) {
 			memcpy(table->ivfcpart_masterhash, calchash, 0x20);
+			fs_updateheaderhash();
 		}
 		else {
-			printf("master hash over the IVFC partition is invalid.\n");
+			printf("master hash over the IVFC partition is invalid, datapart %d.\n", datapart);
 			return 2;
 		}
 	}
+	else {
+		*update = 0;
+	}
+
+	return 0;
+}
+
+int fs_checkheaderhashes(int update)
+{
+	partition_table *savetable = NULL, *datatable = NULL;
+	int saveupdated = 0, dataupdated = 0;
+	int updated;
+	int ret;
+	u8 calchash[0x20];
+
+	savetable = (partition_table*)&savectx.sav[savectx.activepart_tableoffset];
+	if(savectx.datapart_offset)datatable = (partition_table*)&savectx.sav[savectx.activepart_tableoffset + 0x130];
+
+	saveupdated = update;
+	dataupdated = update;	
+
+	ret = fs_calcivfchash(savetable, 0, &saveupdated);
+	if(ret)return ret;
+
+	if(datatable) {
+		ret = fs_calcivfchash(datatable, 1, &dataupdated);
+		if(ret)return ret;
+	}
+
+	updated = saveupdated | dataupdated;
 
 	sha256(&savectx.sav[savectx.activepart_tableoffset], savectx.part_tablesize, calchash);
 	if(memcmp(savectx.activepart_tablehash, calchash, 0x20)!=0) {
@@ -140,10 +175,8 @@ int fs_checkheaderhashes(int update)
 		}
 	}
 
-	if(updated)
-	{
+	if(updated) {
 		savectx.sav_updated = 1;
-		savectx.mac_invalid = 1;
 	}
 
 	return 0;
@@ -248,6 +281,7 @@ fst_entry *fs_get_by_name(u8 *part, const char *name) {
 
 int fs_verifyhashtree(u8 *part, u8 *hashtree, ivfc_header *ivfc, u32 offset, u32 size, u32 level, int update)
 {
+	int i;
 	int updated = 0;
 	int ret = 0;
 
