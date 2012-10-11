@@ -126,7 +126,6 @@ int fs_calcivfchash(partition_table *table, int datapart, int *update)
 	if(memcmp(table->ivfcpart_masterhash, calchash, 0x20)!=0) {
 		if(*update) {
 			memcpy(table->ivfcpart_masterhash, calchash, 0x20);
-			fs_updateheaderhash();
 		}
 		else {
 			printf("master hash over the IVFC partition is invalid, datapart %d.\n", datapart);
@@ -168,6 +167,7 @@ int fs_checkheaderhashes(int update)
 	if(memcmp(savectx.activepart_tablehash, calchash, 0x20)!=0) {
 		if(updated) {
 			memcpy(savectx.activepart_tablehash, calchash, 0x20);
+			fs_updateheaderhash();
 		}
 		else {
 			printf("active table hash from header is invalid.\n");
