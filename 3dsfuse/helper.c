@@ -43,9 +43,10 @@ void md5_buf(u8 *buf, u8 *out, size_t len) {
 	EVP_MD_CTX_cleanup(&mdctx);
 }
 
-u16 calc_crc16(u8 *buf, u32 size, u16 initval, u16 outxor)
+
+u16 crc16(u8 *buf, u32 size, u16 seed)
 {
-	u16 crc = initval;
+	u16 crc = seed;
 	u8 val;
 
 	while(size>0)
@@ -55,7 +56,13 @@ u16 calc_crc16(u8 *buf, u32 size, u16 initval, u16 outxor)
 		crc = crc16_table[(val ^ crc) & 0xff] ^ (crc >> 8);
 	}
 
-	return crc ^ outxor;
+	return crc;
+}
+
+
+u16 calc_crc16(u8 *buf, u32 size, u16 seed, u16 outxor)
+{
+	return crc16(buf, size, seed) ^ outxor;
 }
 
 void xor(u8 *in, u32 len, u8 *out, u8 *key, u32 keylen) {
@@ -70,6 +77,13 @@ void xor(u8 *in, u32 len, u8 *out, u8 *key, u32 keylen) {
 		else
 			out[i] = in[i] ^ kb;
 	}
+}
+
+u16 getle16(const void* ptr)
+{
+	u8* p = (u8*)ptr;
+	
+	return p[0] | (p[1]<<8);
 }
 
 void hexdump(void *ptr, int buflen) {

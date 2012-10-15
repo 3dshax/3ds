@@ -65,7 +65,7 @@ int main(int argc, char *argv[]) {
 			return -2;
 		}
 		else {
-			size -= 0x1000;
+			size -= 0x2000;
 		}
 	}
 	else {
@@ -84,6 +84,11 @@ int main(int argc, char *argv[]) {
 		}
 
 		xor(out_buf, size, NULL, xorpad_buf, 0x200);
+		
+	FILE* f = fopen("logical.bin", "wb");
+	fwrite(out_buf, 1, size, f);
+	fclose(f);
+		
 	}
 
 #ifdef DEBUG
