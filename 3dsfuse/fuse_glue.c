@@ -152,7 +152,7 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 			return -ENOENT;
 		}
 
-		stbuf->st_size = e->size;
+		stbuf->st_size = (size_t)getle64(e->size);
 	}
 
 	printf("@@ stat done\n");
@@ -220,13 +220,13 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 	if (e == NULL)
 		return -ENOENT;
 
-	if (offset >= e->size)
+	if (offset >= (size_t)getle64(e->size))
 		return 0;
 
-	if (offset+size > e->size)
-		size = e->size - offset;
+	if (offset+size > (size_t)getle64(e->size))
+		size = (size_t)getle64(e->size) - offset;
 
-	saveoff = (e->block_no * 0x200) + offset;
+	saveoff = (getle32(e->block_no) * 0x200) + offset;
 
 	if(fs_verifyupdatehashtree_fsdata(saveoff, size, 1, 0))return -EIO;
 
@@ -260,13 +260,13 @@ int sav_write(const char *path, const char *buf, size_t size, off_t offset,
 	if (e == NULL)
 		return -ENOENT;
 
-	if (offset >= e->size)
+	if (offset >= (size_t)getle64(e->size))
 		return 0;
 
-	if (offset+size > e->size)
-		size = e->size - offset;
+	if (offset+size > (size_t)getle64(e->size))
+		size = (size_t)getle64(e->size) - offset;
 
-	saveoff = (e->block_no * 0x200) + offset;
+	saveoff = (getle32(e->block_no) * 0x200) + offset;
 
 	if(fs_verifyupdatehashtree_fsdata(saveoff, size, 1, 0))return -EIO;//the hashtree must be already valid before writing any data.
 

@@ -86,6 +86,29 @@ u16 getle16(const void* ptr)
 	return p[0] | (p[1]<<8);
 }
 
+u32 getle32(const void* ptr)
+{
+	u8* p = (u8*)ptr;
+	
+	return (p[0]<<0) | (p[1]<<8) | (p[2]<<16) | (p[3]<<24);
+}
+
+u64 getle64(const void* ptr)
+{
+	u8* p = (u8*)ptr;
+	u64 n = p[0];
+
+	n |= (u64)p[1]<<8;
+	n |= (u64)p[2]<<16;
+	n |= (u64)p[3]<<24;
+	n |= (u64)p[4]<<32;
+	n |= (u64)p[5]<<40;
+	n |= (u64)p[6]<<48;
+	n |= (u64)p[7]<<56;
+	return n;
+}
+
+
 void hexdump(void *ptr, int buflen) {
   unsigned char *buf = (unsigned char*)ptr;
   int i, j;
