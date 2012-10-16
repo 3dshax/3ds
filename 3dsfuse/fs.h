@@ -77,7 +77,7 @@ typedef struct {
 } dpfs_header;
 
 typedef struct {
-	difi_header difi;
+	//difi_header difi;
 	ivfc_header ivfc;
 	dpfs_header dpfs;
 	u8 ivfcpart_masterhash[0x20];

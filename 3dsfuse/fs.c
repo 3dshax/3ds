@@ -129,7 +129,7 @@ int fs_calcivfchash(partition_table *table, int datapart, int *update)
 		}
 		else {
 			printf("master hash over the IVFC partition is invalid, datapart %d.\n", datapart);
-			return 2;
+			//return 2;
 		}
 	}
 	else {
@@ -147,8 +147,8 @@ int fs_checkheaderhashes(int update)
 	int ret;
 	u8 calchash[0x20];
 
-	savetable = (partition_table*)&savectx.sav[savectx.activepart_tableoffset];
-	if(savectx.datapart_offset)datatable = (partition_table*)&savectx.sav[savectx.activepart_tableoffset + 0x130];
+	savetable = (partition_table*)&savectx.sav[savectx.activepart_tableoffset + 0x44];
+	if(savectx.datapart_offset)datatable = (partition_table*)&savectx.sav[savectx.activepart_tableoffset + 0x130 + 0x44];
 
 	saveupdated = update;
 	dataupdated = update;	
@@ -183,13 +183,13 @@ int fs_checkheaderhashes(int update)
 }
 
 partition_table *fs_part_get_info(u8 *buf, u32 part_no) {
-	return (partition_table*)(buf + savectx.activepart_tableoffset + (part_no * 0x130));
+	return (partition_table*)(buf + savectx.activepart_tableoffset + (part_no * 0x130 + 0x44));
 }
 
 u8 *fs_part(u8 *buf, int fs, int datapart) {
 	u64 pos = 0;
 	u8 *p = buf + savectx.primary_tableoffset;
-	partition_table *part = (partition_table*)p;
+	partition_table *part = (partition_table*)p + 0x44;
 	int num = 0;
 
 	if(!datapart)pos = savectx.savepart_offset;
@@ -200,8 +200,8 @@ u8 *fs_part(u8 *buf, int fs, int datapart) {
 		if(num==1)p = buf + savectx.secondary_tableoffset;
 		if(datapart)p += 0x130;
 
-		part = (partition_table*)p;
-		if(part->difi.magic != 0x49464944) {
+		part = (partition_table*)p + 0x44;
+		if(getle32(p) != 0x49464944) {
 			printf("invalid DIFI magic.\n");
 			return NULL;
 		}
