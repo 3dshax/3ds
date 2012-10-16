@@ -207,7 +207,7 @@ u8 *fs_part(u8 *buf, int fs, int datapart) {
 			return NULL;
 		}
 
-		if(num == (u32)savectx.activepart_table) {
+		if(num == (u32)(savectx.activepart_table & 1)) {
 			//printf("datapart %x pos %llx ivfcpartsize %llx\n", datapart, pos, part->dpfs.ivfcpart_size);
 			if(!fs)return buf + pos;
 			return buf + pos + (u32)getle64(part->ivfc.levels[3].offset);
