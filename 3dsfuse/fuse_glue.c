@@ -113,11 +113,11 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 	stbuf->st_nlink = 1;
 
 	if (strcmp(path, "/") == 0) {
-		stbuf->st_mode = S_IFDIR | 0444;
+		stbuf->st_mode = S_IFDIR | 0445;
 		stbuf->st_nlink = 2 + 1; // always 2 since we dont do subdirs yet
 	} else if (strncmp(path, "/part_", 6) == 0 && strlen(path) == 8) {
 		if(fs_part(sav_buf, 1, 0, -1) == NULL)return -ENOENT;
-		stbuf->st_mode = S_IFDIR | 0444;
+		stbuf->st_mode = S_IFDIR | 0445;
 		stbuf->st_nlink = 2;
 	} else if (strcmp(path, "/clean.sav") == 0) {
 		stbuf->st_size = sav_size;
