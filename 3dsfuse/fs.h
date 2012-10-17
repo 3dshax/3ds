@@ -100,12 +100,11 @@ u32 fs_get_start(u8 *buf);
 u32 fs_get_offset(u8 *buf);
 
 partition_table *fs_part_get_info(u8 *buf, u32 part_no);
-u8 *fs_part(u8 *buf, int fs, int datapart);
+u8 *fs_part(u8 *buf, int fs, int datapart, int part_tableno);
 u8 *fs_getfilebase();
 int fs_verifyupdatehashtree_fsdata(u32 offset, u32 size, int filedata, int update);
 
 fst_entry *fs_get_by_name(u8 *part, const char *name);
 int fs_num_entries(u8 *buf);
-int fs_num_partition(u8 *buf);
 
 #endif

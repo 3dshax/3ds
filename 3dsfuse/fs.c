@@ -19,7 +19,10 @@ typedef struct {
 	u32 savepart_offset;
 	u32 datapart_offset;
 
-	u8 activepart_table;
+	u32 activepart_table;
+	u32 save_activepart;
+	u32 data_activepart;
+
 	u32 datapart_filebase;
 	u32 activepart_tableoffset;
 	u32 part_tablesize;
@@ -67,7 +70,11 @@ int fs_initsave_disa() {
 	savectx.total_partentries = (u32)getle64(disa->total_partentries);
 	savectx.savepart_offset = (u32)getle64(disa->save_partoffset);
 	savectx.datapart_offset = (u32)getle64(disa->data_partoffset);
-	savectx.activepart_table = (u8)getle32(disa->activepart_table);
+
+	savectx.activepart_table = 0;
+	if(getle32(disa->activepart_table) & 0xff)savectx.activepart_table = 1;
+	savectx.save_activepart = savectx.activepart_table;
+	savectx.data_activepart = savectx.activepart_table;
 
 	savectx.primary_tableoffset = (u32)getle64(disa->primarytable_offset);
 	savectx.secondary_tableoffset = (u32)getle64(disa->secondarytable_offset);
@@ -100,13 +107,21 @@ void fs_updateheaderhash()
 
 int fs_calcivfchash(partition_table *table, int datapart, int *update)
 {
-	u8 *part;
+	int partno = 1;
+	u8 *part, *part2;
 	u8 *lvl1_buf;
 	u32 blksz;
 	u8 calchash[0x20];
+	u8 calchash2[0x20];
 
-	part = fs_part(savectx.sav, 0, datapart);
-	if(part == NULL) {
+	if(savectx.activepart_table)partno = 0;
+
+	memset(calchash, 0, 0x20);
+	memset(calchash2, 0, 0x20);
+
+	part = fs_part(savectx.sav, 0, datapart, -1);
+	part2 = fs_part(savectx.sav, 0, datapart, partno);
+	if(part == NULL || part2 == NULL) {
 		printf("invalid partition.\n");
 		return 1;
 	}
@@ -117,24 +132,37 @@ int fs_calcivfchash(partition_table *table, int datapart, int *update)
 		printf("failed to allocate level1 buffer.\n");
 		return 3;
 	}
+
 	memset(lvl1_buf, 0, blksz);
 	memcpy(lvl1_buf, part, (u32)getle64(table->ivfc.levels[0].size));
-
-	memset(calchash, 0, 0x20);
 	sha256(lvl1_buf, blksz, calchash);
+
+	memset(lvl1_buf, 0, blksz);
+	memcpy(lvl1_buf, part2, (u32)getle64(table->ivfc.levels[0].size));
+	sha256(lvl1_buf, blksz, calchash2);
 	free(lvl1_buf);
 
-	if(memcmp(table->ivfcpart_masterhash, calchash, 0x20)!=0) {
-		if(*update) {
-			memcpy(table->ivfcpart_masterhash, calchash, 0x20);
-		}
-		else {
+	if(*update == 0) {
+		if(memcmp(table->ivfcpart_masterhash, calchash, 0x20)!=0) {
+			if(memcmp(table->ivfcpart_masterhash, calchash2, 0x20)==0) {
+				if(datapart==0)savectx.save_activepart = (u32)partno;
+				if(datapart)savectx.data_activepart = (u32)partno;
+
+				printf("using part %d instead, for datapart %d.\n", partno, datapart);
+				return 0;
+			}
+
 			printf("master hash over the IVFC partition is invalid, datapart %d.\n", datapart);
-			//return 2;
+			return 2;
 		}
 	}
 	else {
-		*update = 0;
+		if(memcmp(table->ivfcpart_masterhash, calchash, 0x20)!=0) {
+			memcpy(table->ivfcpart_masterhash, calchash, 0x20);
+		}
+		else {
+			*update = 0;
+		}
 	}
 
 	return 0;
@@ -187,15 +215,21 @@ partition_table *fs_part_get_info(u8 *buf, u32 part_no) {
 	return (partition_table*)(buf + savectx.activepart_tableoffset + (part_no * 0x130));
 }
 
-u8 *fs_part(u8 *buf, int fs, int datapart) {
+u8 *fs_part(u8 *buf, int fs, int datapart, int part_tableno) {
 	u32 pos = 0;
 	u8 *p = buf + savectx.primary_tableoffset;
 	partition_table *part = (partition_table*)p;
-	u32 num = 0;
+	int num = 0;
 
 	if(!datapart)pos = savectx.savepart_offset;
 	if(datapart)pos = savectx.datapart_offset;
 	pos += (u32)getle64(part->dpfs.ivfcpart_offset);
+
+	if(part_tableno==-1)
+	{
+		if(datapart==0)part_tableno = (int)savectx.save_activepart;
+		if(datapart)part_tableno = (int)savectx.data_activepart;
+	}
 
 	for(num=0; num<2; num++) {
 		if(num==1)p = buf + savectx.secondary_tableoffset;
@@ -207,7 +241,7 @@ u8 *fs_part(u8 *buf, int fs, int datapart) {
 			return NULL;
 		}
 
-		if(num == (u32)(savectx.activepart_table & 1)) {
+		if(num == part_tableno) {
 			//printf("datapart %x pos %llx ivfcpartsize %llx\n", datapart, pos, part->dpfs.ivfcpart_size);
 			if(!fs)return buf + pos;
 			return buf + pos + (u32)getle64(part->ivfc.levels[3].offset);
@@ -219,16 +253,12 @@ u8 *fs_part(u8 *buf, int fs, int datapart) {
 	return NULL;
 }
 
-int fs_num_partition(u8 *buf) {
-	return 1;
-}
-
 u8 *fs_getfilebase()
 {
 	u8 *part;
 
 	if(savectx.datapart_offset==0) {
-		part = fs_part(savectx.sav, 1, 0);
+		part = fs_part(savectx.sav, 1, 0, -1);
 		return part + fs_get_offset(part);
 	}
 
@@ -358,17 +388,17 @@ int fs_verifyupdatehashtree_fsdata(u32 offset, u32 size, int filedata, int updat
 	partition_table *table;
 
 	if(savectx.datapart_offset==0 || !filedata) {
-		part = fs_part(savectx.sav, 1, 0);
+		part = fs_part(savectx.sav, 1, 0, -1);
 		offset += fs_get_offset(part);
 
-		hashtree = fs_part(savectx.sav, 0, 0);
+		hashtree = fs_part(savectx.sav, 0, 0, -1);
 		table = fs_part_get_info(savectx.sav, 0);
 	}
 	else {
 		part = savectx.sav + (savectx.datapart_offset + savectx.datapart_filebase);
 		table = fs_part_get_info(savectx.sav, 1);
 
-		hashtree = fs_part(savectx.sav, 0, 1);
+		hashtree = fs_part(savectx.sav, 0, 1, -1);
 	}
 
 	ret = fs_verifyhashtree(part, hashtree, &table->ivfc, offset, size, 3, update);

@@ -23,26 +23,12 @@ static struct fuse_operations sav_operations = {
 	.write   = sav_write
 };
 
-u32 path_to_idx(const char *path) {
-	int i;
-	char name_buf[10];
-
-	// determine partition
-	for(i = 0; i < fs_num_partition(sav_buf); i++) {
-		sprintf(name_buf, "/part_%02x/", i);
-		if (strncmp(name_buf, path, 9) != 0)
-			return i;
-	}
-
-	return 0;
-}
-
 u8 *path_to_part(const char *path) {
 	if (strncmp(path, "/part_00/", 9) != 0) {
 		return NULL; 
 	}
 
-	return fs_part(sav_buf, 1, 0);
+	return fs_part(sav_buf, 1, 0, -1);
 }
 
 int fuse_sav_init(u8 *buf, u32 size, u8 *xorpad, int argc, char *argv[]) {
@@ -71,7 +57,7 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 		filler(buf, ".", NULL, 0);
 		filler(buf, "..", NULL, 0);
 
-		part = fs_part(sav_buf, 1, 0);
+		part = fs_part(sav_buf, 1, 0, -1);
 		if(part) {
 			if (strncmp((char*)part, "SAVE", 4) != 0) {
 				printf("SAVE partition is invalid.\n");
@@ -89,7 +75,7 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 	} 
 
 	if (strncmp(path, "/part_00", 8) == 0) {
-		part = fs_part(sav_buf, 1, 0);
+		part = fs_part(sav_buf, 1, 0, -1);
 		if(part == NULL)return -ENOENT;
 
 		filler(buf, ".", NULL, 0);
@@ -128,9 +114,9 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 
 	if (strcmp(path, "/") == 0) {
 		stbuf->st_mode = S_IFDIR | 0444;
-		stbuf->st_nlink = 2 + fs_num_partition(sav_buf); // always 2 since we dont do subdirs yet
+		stbuf->st_nlink = 2 + 1; // always 2 since we dont do subdirs yet
 	} else if (strncmp(path, "/part_", 6) == 0 && strlen(path) == 8) {
-		if(fs_part(sav_buf, 1, 0) == NULL)return -ENOENT;
+		if(fs_part(sav_buf, 1, 0, -1) == NULL)return -ENOENT;
 		stbuf->st_mode = S_IFDIR | 0444;
 		stbuf->st_nlink = 2;
 	} else if (strcmp(path, "/clean.sav") == 0) {
@@ -138,7 +124,7 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 	} else if (strcmp(path, "/key.bin") == 0) {
 		stbuf->st_size = 512;
 	} else {
-		part = fs_part(sav_buf, 1, 0);
+		part = fs_part(sav_buf, 1, 0, -1);
 		if(part == NULL)return -ENOENT;
 
 		if (strncmp((char*)part, "SAVE", 4) != 0) {
