@@ -121,11 +121,11 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 	stbuf->st_nlink = 1;
 
 	if (strcmp(path, "/") == 0) {
-		stbuf->st_mode = S_IFDIR | 0444;
+		stbuf->st_mode = S_IFDIR | 0445;
 		stbuf->st_nlink = 2 + 1; // always 2 since we dont do subdirs yet
 	} else if (strncmp(path, "/part_", 6) == 0 && strlen(path) == 8) {
 		if(fs_part(sav_buf, 1, 0, -1) == NULL)return -ENOENT;
-		stbuf->st_mode = S_IFDIR | 0444;
+		stbuf->st_mode = S_IFDIR | 0445;
 		stbuf->st_nlink = 2;
 	} else if (strcmp(path, "/clean.sav") == 0) {
 		stbuf->st_size = sav_size;
@@ -266,9 +266,7 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 
 	saveoff = (getle32(e->block_no) * 0x200) + offset;
 
-	if(fs_verifyupdatehashtree_fsdata(saveoff, size, 1, 0))return -EIO;
-
-	memcpy(buf, fs_getfilebase() + saveoff, size);
+	if(fs_verifyupdatehashtree_fsdata(saveoff, size, (u8*)buf, 1, 0))return -EIO;
 
 	return size;
 }
@@ -311,11 +309,11 @@ int sav_write(const char *path, const char *buf, size_t size, off_t offset,
 
 	saveoff = (getle32(e->block_no) * 0x200) + offset;
 
-	if(fs_verifyupdatehashtree_fsdata(saveoff, size, 1, 0))return -EIO;//the hashtree must be already valid before writing any data.
+	if(fs_verifyupdatehashtree_fsdata(saveoff, size, NULL, 1, 0))return -EIO;//the hashtree must be already valid before writing any data.
 
 	memcpy(fs_getfilebase() + saveoff, buf, size);
 
-	if(fs_verifyupdatehashtree_fsdata(saveoff, size, 1, 1))return -EIO;
+	if(fs_verifyupdatehashtree_fsdata(saveoff, size, NULL, 1, 1))return -EIO;
 
 	// TODO: this is icky, but I will fix it later
 	xor(sav_buf, sav_size, out_buf+0x2000, xorpad_buf, 0x200);

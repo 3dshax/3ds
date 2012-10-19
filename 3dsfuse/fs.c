@@ -262,7 +262,7 @@ u8 *fs_getfilebase()
 		return part + fs_get_offset(part);
 	}
 
-	return savectx.sav + (savectx.datapart_offset + savectx.datapart_filebase);
+	return fs_part(savectx.sav, 1, 1, -1);
 }
 
 u32 fs_get_offset(u8 *buf) {
@@ -308,32 +308,34 @@ fst_entry *fs_get_by_name(u8 *part, const char *name) {
 	return NULL;
 }
 
-int fs_verifyhashtree(u8 *part, u8 *hashtree, ivfc_header *ivfc, u32 offset, u32 size, u32 level, int update)
+int fs_verifyhashtree(u8 *part, u8 *partbak, u8 *hashtree, ivfc_header *ivfc, u32 offset, u32 size, u8 *databuf, u32 level, int update)
 {
 	int i;
 	int updated = 0;
 	int ret = 0;
 
 	u32 blksz, levelsize, chunksize;
-	u32 curpos = 0, hashpos = 0, cursize = 0;
+	u32 aligned_imgpos = 0, hashpos = 0, datapos = 0;
+	u32 databuf_chunksize = 0;
 	u32 curhashpos = 0, totalhashsize = 0x20;
 	u32 hashtable_pos;
 
 	u8 *hashtable;
 	u8 *hashdata;
 	u8 calchash[0x20];
+	u8 calchashbak[0x20];
 
 	hashtable_pos = (u32)getle64(ivfc->levels[level-1].offset);
 	hashtable = hashtree + hashtable_pos;
 
 	blksz = 1 << getle32(ivfc->levels[level].blksize);
 	levelsize = (u32)getle64(ivfc->levels[level].size);
-	curpos = offset;
+	aligned_imgpos = offset;
 	chunksize = blksz;
 
-	curpos >>= getle32(ivfc->levels[level].blksize);
-	hashpos = curpos * 0x20;
-	curpos <<= getle32(ivfc->levels[level].blksize);
+	aligned_imgpos >>= getle32(ivfc->levels[level].blksize);
+	hashpos = aligned_imgpos * 0x20;
+	aligned_imgpos <<= getle32(ivfc->levels[level].blksize);
 
 	curhashpos = hashpos;
 
@@ -343,26 +345,46 @@ int fs_verifyhashtree(u8 *part, u8 *hashtree, ivfc_header *ivfc, u32 offset, u32
 		return 1;
 	}
 
-	while(cursize < size) {
-		if(chunksize > levelsize - curpos)chunksize = levelsize - curpos;
-		memset(hashdata, 0, blksz);
-		memcpy(hashdata, &part[curpos], chunksize);
+	databuf_chunksize = blksz - (offset & (blksz-1));
 
+	while(datapos < size) {
+		if(chunksize > levelsize - aligned_imgpos)chunksize = levelsize - aligned_imgpos;
+		if(databuf_chunksize > size - datapos)databuf_chunksize = size - datapos;
+
+		memset(hashdata, 0, blksz);
+		memcpy(hashdata, &part[aligned_imgpos], chunksize);
 		sha256(hashdata, blksz, calchash);
+
+		if(partbak)
+		{
+			memset(hashdata, 0, blksz);
+			memcpy(hashdata, &partbak[aligned_imgpos], chunksize);
+			sha256(hashdata, blksz, calchashbak);
+		}
+
 		if(memcmp(hashtable + curhashpos, calchash, 0x20)!=0) {
 			if(update) {
 				updated = 1;
 				memcpy(hashtable + curhashpos, calchash, 0x20);
 			}
 			else {
-				printf("hash entry in lvl%u for lvl%u is invalid, curpos %x hashpos %x blksz %x\n", level-1, level, curpos, curhashpos, blksz);
-				free(hashdata);
-				return 2;
+				if(!partbak || (partbak && memcmp(hashtable + curhashpos, calchashbak, 0x20)!=0)) {
+					printf("hash entry in lvl%u for lvl%u is invalid, aligned_imgpos %x hashpos %x blksz %x\n", level, level+1, aligned_imgpos, curhashpos, blksz);
+					free(hashdata);
+					return 2;
+				}
+
+				if(databuf)memcpy(&databuf[datapos], &partbak[offset], databuf_chunksize);
 			}
 		}
+		else {
+			if(databuf)memcpy(&databuf[datapos], &part[offset], databuf_chunksize);
+		}
 
-		cursize += blksz;
-		curpos += blksz;
+		datapos += databuf_chunksize;
+		offset += databuf_chunksize;
+		databuf_chunksize = blksz;
+		aligned_imgpos += blksz;
 		curhashpos += 0x20;
 		totalhashsize += 0x20;
 	}
@@ -370,7 +392,7 @@ int fs_verifyhashtree(u8 *part, u8 *hashtree, ivfc_header *ivfc, u32 offset, u32
 	free(hashdata);
 
 	if(level>=2) {
-		ret = fs_verifyhashtree(hashtable, hashtree, ivfc, hashtable_pos + hashpos, totalhashsize, level-1, updated);
+		ret = fs_verifyhashtree(hashtable, NULL, hashtree, ivfc, hashtable_pos + hashpos, totalhashsize, NULL, level-1, updated);
 		if(ret)return ret;
 	}
 
@@ -380,28 +402,32 @@ int fs_verifyhashtree(u8 *part, u8 *hashtree, ivfc_header *ivfc, u32 offset, u32
 	return ret;
 }
 
-int fs_verifyupdatehashtree_fsdata(u32 offset, u32 size, int filedata, int update)
+int fs_verifyupdatehashtree_fsdata(u32 offset, u32 size, u8 *databuf, int filedata, int update)
 {
-	int ret;
+	int ret, partno = 1;
 	u8 *hashtree;
-	u8 *part;
+	u8 *part, *partbak;
 	partition_table *table;
+
+	if(savectx.activepart_table)partno = 0;
 
 	if(savectx.datapart_offset==0 || !filedata) {
 		part = fs_part(savectx.sav, 1, 0, -1);
+		partbak = fs_part(savectx.sav, 1, 0, partno);
 		offset += fs_get_offset(part);
 
 		hashtree = fs_part(savectx.sav, 0, 0, -1);
 		table = fs_part_get_info(savectx.sav, 0);
 	}
 	else {
-		part = savectx.sav + (savectx.datapart_offset + savectx.datapart_filebase);
+		part = fs_part(savectx.sav, 1, 1, -1);
+		partbak = fs_part(savectx.sav, 1, 1, partno);
 		table = fs_part_get_info(savectx.sav, 1);
 
 		hashtree = fs_part(savectx.sav, 0, 1, -1);
 	}
 
-	ret = fs_verifyhashtree(part, hashtree, &table->ivfc, offset, size, 3, update);
+	ret = fs_verifyhashtree(part, partbak, hashtree, &table->ivfc, offset, size, databuf, 3, update);
 
 	return ret;
 }
