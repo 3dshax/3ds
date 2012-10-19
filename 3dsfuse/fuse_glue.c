@@ -12,6 +12,7 @@
 
 /** icky globals **/
 static u8 *sav_buf;
+static u8 *out_buf;
 static u8 *xorpad_buf;
 static u32 sav_size=0;
 
@@ -35,13 +36,19 @@ int fuse_sav_init(u8 *buf, u32 size, u8 *xorpad, int argc, char *argv[]) {
 	// lets keep this locally for the FUSE driver, these
 	// images arent very huge anyway
 	sav_buf = malloc(size);
+	out_buf = malloc(size+0x2000);
+
 	sav_size = size;
 	memcpy(sav_buf, buf, size);
 
 	xorpad_buf = malloc(0x200);
 	memcpy(xorpad_buf, xorpad, 0x200);
 
-	if(fs_initsave(sav_buf))return 1;
+	memset(out_buf, 0xff, size+0x2000);
+	xor(sav_buf, sav_size, out_buf+0x2000, xorpad_buf, 0x200);
+
+	if(fs_initsave(sav_buf))
+		return 1;
 
 	return fuse_main(argc, argv, &sav_operations);
 }
@@ -69,6 +76,7 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 		}
 
 		filler(buf, "clean.sav", NULL, 0);
+		filler(buf, "output.sav", NULL, 0);
 		filler(buf, "key.bin", NULL, 0);
 
 		return 0;
@@ -123,6 +131,8 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 		stbuf->st_size = sav_size;
 	} else if (strcmp(path, "/key.bin") == 0) {
 		stbuf->st_size = 512;
+	} else if (strcmp(path, "/output.sav") == 0) {
+		stbuf->st_size = sav_size+0x2000;
 	} else {
 		part = fs_part(sav_buf, 1, 0, -1);
 		if(part == NULL)return -ENOENT;
@@ -161,6 +171,13 @@ int sav_open(const char *path, struct fuse_file_info *fi) {
 		return 0;
 	}
 
+	if (strcmp(path, "/output.sav") == 0) {
+		if((fi->flags & 3) != O_RDONLY)
+			return -EACCES;
+
+		return 0;
+	}
+
 	part = path_to_part(path);
 
 	if (part == NULL)
@@ -185,7 +202,9 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 
 	fst_entry *e;
 	u8 *part;
-	u32 saveoff;
+	u16 crc=0;
+	u32 saveoff, buf_offs=0, block_offs=0, nblocks=0;
+	int i, j;
 	
 	if (strcmp(path, "/clean.sav") == 0) {
 		memcpy(buf, sav_buf + offset, size);
@@ -194,6 +213,39 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 
 	if (strcmp(path, "/key.bin") == 0) {
 		memcpy(buf, xorpad_buf + offset, size);
+		return size;
+	}
+
+	if (strcmp(path, "/output.sav") == 0) {
+		// build flat blockmap and empty journal
+		nblocks = ((sav_size+0x2000) >> 12);
+
+		memset(out_buf, 0x00, 0x08); // clear first 8 bytes, unknown
+
+		for(i=0; i<nblocks-1; i++) {
+			buf_offs = 8 + (i*10);
+			out_buf[buf_offs+0] = (i+2) | 0x80;
+			out_buf[buf_offs+1] = 1;
+
+			for(j=0; j<8; j++) {
+				block_offs = (i * 0x1000) + (j * 0x200);
+				crc = crc16(out_buf + 0x2000 + block_offs, 0x200, 0xFFFF);
+				out_buf[buf_offs+2+j] = (crc >> 8) ^ (crc & 0xff);
+			}
+		}
+
+		buf_offs = 8 + (nblocks-1)*10;
+
+		crc = crc16(out_buf, buf_offs, 0xFFFF);
+		printf("+++ BLOCKMAP CRC %04x\n", crc);
+		out_buf[buf_offs+0] = crc & 0xff;
+		out_buf[buf_offs+1] = (crc >> 8);
+
+		// mirror blockmap+journal
+		memcpy(out_buf+0x1000, out_buf, 0x1000);
+
+		memcpy(buf, out_buf + offset, size);
+
 		return size;
 	}
 
@@ -234,6 +286,11 @@ int sav_write(const char *path, const char *buf, size_t size, off_t offset,
 		return size;
 	}
 
+
+	if (strcmp(path, "/output.sav") == 0) {
+		return -EINVAL;
+	}
+
 	if (strcmp(path, "/key.bin") == 0)
 		return -EINVAL;
 
@@ -260,6 +317,8 @@ int sav_write(const char *path, const char *buf, size_t size, off_t offset,
 
 	if(fs_verifyupdatehashtree_fsdata(saveoff, size, 1, 1))return -EIO;
 
+	// TODO: this is icky, but I will fix it later
+	xor(sav_buf, sav_size, out_buf+0x2000, xorpad_buf, 0x200);
 	return size;
 }
 

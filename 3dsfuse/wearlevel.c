@@ -98,7 +98,7 @@ int rearrange(u8* savebuffer, u8* out, int savesize) {
 			bytecrc = shortcrc ^ (shortcrc>>8);
 			
 			if (blkmap.entries[i].checksum[j] != bytecrc) {
-				printf("Invalid CRC for logical block %d (physical 0x%02x).\n", i, blknum);
+				printf("Invalid CRC for logical block %d (physical 0x%02x). [%02x vs %02x]\n", i, blknum, bytecrc, blkmap.entries[i].checksum[j]);
 				return -2;
 			}
 		}
