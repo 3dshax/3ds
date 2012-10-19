@@ -214,9 +214,7 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 
 	saveoff = (getle32(e->block_no) * 0x200) + offset;
 
-	if(fs_verifyupdatehashtree_fsdata(saveoff, size, 1, 0))return -EIO;
-
-	memcpy(buf, fs_getfilebase() + saveoff, size);
+	if(fs_verifyupdatehashtree_fsdata(saveoff, size, (u8*)buf, 1, 0))return -EIO;
 
 	return size;
 }
@@ -254,11 +252,11 @@ int sav_write(const char *path, const char *buf, size_t size, off_t offset,
 
 	saveoff = (getle32(e->block_no) * 0x200) + offset;
 
-	if(fs_verifyupdatehashtree_fsdata(saveoff, size, 1, 0))return -EIO;//the hashtree must be already valid before writing any data.
+	if(fs_verifyupdatehashtree_fsdata(saveoff, size, NULL, 1, 0))return -EIO;//the hashtree must be already valid before writing any data.
 
 	memcpy(fs_getfilebase() + saveoff, buf, size);
 
-	if(fs_verifyupdatehashtree_fsdata(saveoff, size, 1, 1))return -EIO;
+	if(fs_verifyupdatehashtree_fsdata(saveoff, size, NULL, 1, 1))return -EIO;
 
 	return size;
 }
