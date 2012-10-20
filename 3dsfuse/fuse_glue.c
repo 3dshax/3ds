@@ -221,6 +221,7 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 		nblocks = ((sav_size+0x2000) >> 12);
 
 		memset(out_buf, 0x00, 0x08); // clear first 8 bytes, unknown
+		xor(sav_buf, sav_size, out_buf+0x2000, xorpad_buf, 0x200);
 
 		for(i=0; i<nblocks-1; i++) {
 			buf_offs = 8 + (i*10);
@@ -311,12 +312,8 @@ int sav_write(const char *path, const char *buf, size_t size, off_t offset,
 
 	if(fs_verifyupdatehashtree_fsdata(saveoff, size, NULL, 1, 0))return -EIO;//the hashtree must be already valid before writing any data.
 
-	memcpy(fs_getfilebase() + saveoff, buf, size);
+	if(fs_verifyupdatehashtree_fsdata(saveoff, size, (u8*)buf, 1, 1))return -EIO;
 
-	if(fs_verifyupdatehashtree_fsdata(saveoff, size, NULL, 1, 1))return -EIO;
-
-	// TODO: this is icky, but I will fix it later
-	xor(sav_buf, sav_size, out_buf+0x2000, xorpad_buf, 0x200);
 	return size;
 }
 

@@ -217,13 +217,14 @@ partition_table *fs_part_get_info(u8 *buf, u32 part_no) {
 
 u8 *fs_part(u8 *buf, int fs, int datapart, int part_tableno) {
 	u32 pos = 0;
+	u32 fs_off = 0, fs_sz = 0;
 	u8 *p = buf + savectx.primary_tableoffset;
 	partition_table *part = (partition_table*)p;
 	int num = 0;
 
 	if(!datapart)pos = savectx.savepart_offset;
 	if(datapart)pos = savectx.datapart_offset;
-	pos += (u32)getle64(part->dpfs.ivfcpart_offset);
+	pos += (u32)getle64(part->dpfs.ivfcpart.offset);
 
 	if(part_tableno==-1)
 	{
@@ -241,16 +242,49 @@ u8 *fs_part(u8 *buf, int fs, int datapart, int part_tableno) {
 			return NULL;
 		}
 
+		fs_off = (u32)getle64(part->ivfc.levels[3].offset);
+		fs_sz = (u32)getle64(part->ivfc.levels[3].size);
+
 		if(num == part_tableno) {
-			//printf("datapart %x pos %llx ivfcpartsize %llx\n", datapart, pos, part->dpfs.ivfcpart_size);
+			//printf("datapart %x pos %x ivfcpartsize %x fs off %x fs sz %x\n", datapart, pos, (u32)getle64(part->dpfs.ivfcpart.size), fs_off, fs_sz);
 			if(!fs)return buf + pos;
-			return buf + pos + (u32)getle64(part->ivfc.levels[3].offset);
+			return buf + pos + fs_off;
 		}
 
-		pos += (u32)getle64(part->dpfs.ivfcpart_size);
+		pos += (u32)getle64(part->dpfs.ivfcpart.size);
 	}
 
 	return NULL;
+}
+
+int fs_dpfs_getpartno(int datapart, u32 part_offset)
+{
+	u32 part_base = 0;
+	u32 maskstart, blksz, blockpos;
+	u32 tableno;
+	u32 mask = 0;
+	u8 *part;
+	partition_table *part_table = (partition_table*)&savectx.sav[savectx.activepart_tableoffset];
+
+	tableno = savectx.activepart_table;
+	part_base = savectx.savepart_offset;
+	if(datapart)part_base = savectx.datapart_offset;
+
+	maskstart = (u32)getle64(part_table->dpfs.tables[tableno].offset) + (u32)getle64(part_table->dpfs.tables[tableno].size);
+	blksz = getle32(part_table->dpfs.ivfcpart.blksize);
+
+	part = savectx.sav + part_base + maskstart;
+
+	blockpos = part_offset >> blksz;
+	if(blockpos > 30) {
+		printf("fs_dpfs_getpartflag: part_offset>=0x1f000 not supported currently, part_offset %x blockpos %x.\n", part_offset, blockpos);
+		return -1;
+	}
+
+	if(tableno==0)mask = getle32(part+4);
+	if(tableno)mask = getle32(part);
+	if(mask & (1 << ( 30 - blockpos)))return 1;
+	return 0;
 }
 
 u8 *fs_getfilebase()
@@ -308,11 +342,12 @@ fst_entry *fs_get_by_name(u8 *part, const char *name) {
 	return NULL;
 }
 
-int fs_verifyhashtree(u8 *part, u8 *partbak, u8 *hashtree, ivfc_header *ivfc, u32 offset, u32 size, u8 *databuf, u32 level, int update)
+int fs_verifyhashtree(u8 *part, u8 *part2, int datapart, u8 *hashtree, ivfc_header *ivfc, u32 offset, u32 size, u8 *databuf, u32 level, int update)
 {
 	int i;
 	int updated = 0;
 	int ret = 0;
+	int partno;
 
 	u32 blksz, levelsize, chunksize;
 	u32 aligned_imgpos = 0, hashpos = 0, datapos = 0;
@@ -322,8 +357,8 @@ int fs_verifyhashtree(u8 *part, u8 *partbak, u8 *hashtree, ivfc_header *ivfc, u3
 
 	u8 *hashtable;
 	u8 *hashdata;
+	u8 *cur_part;
 	u8 calchash[0x20];
-	u8 calchashbak[0x20];
 
 	hashtable_pos = (u32)getle64(ivfc->levels[level-1].offset);
 	hashtable = hashtree + hashtable_pos;
@@ -351,16 +386,23 @@ int fs_verifyhashtree(u8 *part, u8 *partbak, u8 *hashtree, ivfc_header *ivfc, u3
 		if(chunksize > levelsize - aligned_imgpos)chunksize = levelsize - aligned_imgpos;
 		if(databuf_chunksize > size - datapos)databuf_chunksize = size - datapos;
 
-		memset(hashdata, 0, blksz);
-		memcpy(hashdata, &part[aligned_imgpos], chunksize);
-		sha256(hashdata, blksz, calchash);
-
-		if(partbak)
-		{
-			memset(hashdata, 0, blksz);
-			memcpy(hashdata, &partbak[aligned_imgpos], chunksize);
-			sha256(hashdata, blksz, calchashbak);
+		partno = 0;
+		if(datapart!=-1) {
+			partno = fs_dpfs_getpartno(datapart, aligned_imgpos);
 		}
+		if(partno==-1)return 2;
+
+		memset(hashdata, 0, blksz);
+
+		cur_part = part;
+		if(part2 && partno==1) {
+			cur_part = part2;
+		}
+
+		if(update && databuf)memcpy(&cur_part[offset], &databuf[datapos], databuf_chunksize);
+
+		memcpy(hashdata, &cur_part[aligned_imgpos], chunksize);
+		sha256(hashdata, blksz, calchash);
 
 		if(memcmp(hashtable + curhashpos, calchash, 0x20)!=0) {
 			if(update) {
@@ -368,17 +410,22 @@ int fs_verifyhashtree(u8 *part, u8 *partbak, u8 *hashtree, ivfc_header *ivfc, u3
 				memcpy(hashtable + curhashpos, calchash, 0x20);
 			}
 			else {
-				if(!partbak || (partbak && memcmp(hashtable + curhashpos, calchashbak, 0x20)!=0)) {
-					printf("hash entry in lvl%u for lvl%u is invalid, aligned_imgpos %x hashpos %x blksz %x\n", level, level+1, aligned_imgpos, curhashpos, blksz);
-					free(hashdata);
-					return 2;
-				}
-
-				if(databuf)memcpy(&databuf[datapos], &partbak[offset], databuf_chunksize);
+				printf("hash entry in lvl%u for lvl%u is invalid for part%d, aligned_imgpos %x hashpos %x blksz %x\n", level, level+1, partno, aligned_imgpos, curhashpos, blksz);
+				printf("calc hash: \n");
+				for(i=0; i<0x20; i++)printf("%02x", calchash[i]);
+				printf("\nhash-table hash: \n");
+				for(i=0; i<0x20; i++)printf("%02x", hashtable[curhashpos + i]);
+				printf("\n");
+				printf("part off %x\n", (u32)part - (u32)savectx.sav);
+				if(part2)printf("part2 off %x\n", (u32)part2 - (u32)savectx.sav);
+				free(hashdata);
+				return 2;
 			}
 		}
 		else {
-			if(databuf)memcpy(&databuf[datapos], &part[offset], databuf_chunksize);
+			//printf("hash entry in lvl%u for lvl%u is valid for part%d, aligned_imgpos %x hashpos %x blksz %x\n", level, level+1, partno, aligned_imgpos, curhashpos, blksz);
+
+			if(!update && databuf)memcpy(&databuf[datapos], &cur_part[offset], databuf_chunksize);
 		}
 
 		datapos += databuf_chunksize;
@@ -392,7 +439,7 @@ int fs_verifyhashtree(u8 *part, u8 *partbak, u8 *hashtree, ivfc_header *ivfc, u3
 	free(hashdata);
 
 	if(level>=2) {
-		ret = fs_verifyhashtree(hashtable, NULL, hashtree, ivfc, hashtable_pos + hashpos, totalhashsize, NULL, level-1, updated);
+		ret = fs_verifyhashtree(hashtable, NULL, -1, hashtree, ivfc, hashtable_pos + hashpos, totalhashsize, NULL, level-1, updated);
 		if(ret)return ret;
 	}
 
@@ -404,30 +451,30 @@ int fs_verifyhashtree(u8 *part, u8 *partbak, u8 *hashtree, ivfc_header *ivfc, u3
 
 int fs_verifyupdatehashtree_fsdata(u32 offset, u32 size, u8 *databuf, int filedata, int update)
 {
-	int ret, partno = 1;
+	int ret, datapart;
 	u8 *hashtree;
-	u8 *part, *partbak;
+	u8 *part, *part2;
 	partition_table *table;
 
-	if(savectx.activepart_table)partno = 0;
-
 	if(savectx.datapart_offset==0 || !filedata) {
-		part = fs_part(savectx.sav, 1, 0, -1);
-		partbak = fs_part(savectx.sav, 1, 0, partno);
+		datapart = 0;
+		part = fs_part(savectx.sav, 1, 0, 0);
+		part2 = fs_part(savectx.sav, 1, 0, 1);
 		offset += fs_get_offset(part);
 
 		hashtree = fs_part(savectx.sav, 0, 0, -1);
 		table = fs_part_get_info(savectx.sav, 0);
 	}
 	else {
-		part = fs_part(savectx.sav, 1, 1, -1);
-		partbak = fs_part(savectx.sav, 1, 1, partno);
+		datapart = 1;
+		part = fs_part(savectx.sav, 1, 1, 0);
+		part2 = fs_part(savectx.sav, 1, 1, 1);
 		table = fs_part_get_info(savectx.sav, 1);
 
 		hashtree = fs_part(savectx.sav, 0, 1, -1);
 	}
 
-	ret = fs_verifyhashtree(part, partbak, hashtree, &table->ivfc, offset, size, databuf, 3, update);
+	ret = fs_verifyhashtree(part, part2, datapart, hashtree, &table->ivfc, offset, size, databuf, 3, update);
 
 	return ret;
 }

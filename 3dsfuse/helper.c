@@ -86,11 +86,25 @@ u16 getle16(const void* ptr)
 	return p[0] | (p[1]<<8);
 }
 
+u16 getbe16(const void* ptr)
+{
+	u8* p = (u8*)ptr;
+	
+	return (p[0]<<8) | (p[1]<<0);
+}
+
 u32 getle32(const void* ptr)
 {
 	u8* p = (u8*)ptr;
 	
 	return (p[0]<<0) | (p[1]<<8) | (p[2]<<16) | (p[3]<<24);
+}
+
+u32 getbe32(const void* ptr)
+{
+	u8* p = (u8*)ptr;
+	
+	return (p[0]<<24) | (p[1]<<16) | (p[2]<<8) | (p[3]<<0);
 }
 
 u64 getle64(const void* ptr)
@@ -105,6 +119,22 @@ u64 getle64(const void* ptr)
 	n |= (u64)p[5]<<40;
 	n |= (u64)p[6]<<48;
 	n |= (u64)p[7]<<56;
+	return n;
+}
+
+u64 getbe64(const void* ptr)
+{
+	u8* p = (u8*)ptr;
+	u64 n = 0;
+
+	n |= (u64)p[0]<<56;
+	n |= (u64)p[1]<<48;
+	n |= (u64)p[2]<<40;
+	n |= (u64)p[3]<<32;
+	n |= (u64)p[4]<<24;
+	n |= (u64)p[5]<<16;
+	n |= (u64)p[6]<<8;
+	n |= (u64)p[7]<<0;
 	return n;
 }
 

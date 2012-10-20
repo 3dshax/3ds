@@ -60,20 +60,8 @@ typedef struct {
 	u8 magic[4];//"DPFS"
 	u8 magicnum[4];//0x10000
 
-	u8 table1_offset[8];
-	u8 table1_size[8];
-	u8 table1_blksize[4];
-	u8 table1_reserved[4];
-
-	u8 table2_offset[8];
-	u8 table2_size[8];
-	u8 table2_blksize[4];
-	u8 table2_reserved[4];
-
-	u8 ivfcpart_offset[8];
-	u8 ivfcpart_size[8];
-	u8 ivfcpart_blksize[4];
-	u8 ivfcpart_reserved[4];
+	ivfclevel_header tables[2];
+	ivfclevel_header ivfcpart;
 } dpfs_header;
 
 typedef struct {
