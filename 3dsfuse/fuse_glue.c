@@ -77,7 +77,7 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 
 		filler(buf, "clean.sav", NULL, 0);
 		filler(buf, "output.sav", NULL, 0);
-		filler(buf, "key.bin", NULL, 0);
+		filler(buf, "xorpad.bin", NULL, 0);
 
 		return 0;
 	} 
@@ -134,7 +134,7 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 		stbuf->st_nlink = 2;
 	} else if (strcmp(path, "/clean.sav") == 0) {
 		stbuf->st_size = sav_size;
-	} else if (strcmp(path, "/key.bin") == 0) {
+	} else if (strcmp(path, "/xorpad.bin") == 0) {
 		stbuf->st_size = 512;
 	} else if (strcmp(path, "/output.sav") == 0) {
 		stbuf->st_size = sav_size+0x2000;
@@ -169,10 +169,7 @@ int sav_open(const char *path, struct fuse_file_info *fi) {
 		return 0;
 	}
 
-	if (strcmp(path, "/key.bin") == 0) {
-		if((fi->flags & 3) != O_RDONLY)
-			return -EACCES;
-
+	if (strcmp(path, "/xorpad.bin") == 0) {
 		return 0;
 	}
 
@@ -216,7 +213,7 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 		return size;
 	}
 
-	if (strcmp(path, "/key.bin") == 0) {
+	if (strcmp(path, "/xorpad.bin") == 0) {
 		memcpy(buf, xorpad_buf + offset, size);
 		return size;
 	}
@@ -290,13 +287,15 @@ int sav_write(const char *path, const char *buf, size_t size, off_t offset,
 		return size;
 	}
 
+	if (strcmp(path, "/xorpad.bin") == 0) {
+		memcpy(xorpad_buf + offset, buf, size);
+		return size;
+	}
+
 
 	if (strcmp(path, "/output.sav") == 0) {
 		return -EINVAL;
 	}
-
-	if (strcmp(path, "/key.bin") == 0)
-		return -EINVAL;
 
 	part = path_to_part(path);
 	if (part == NULL)
