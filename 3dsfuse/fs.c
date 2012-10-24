@@ -331,8 +331,12 @@ fst_entry *fs_get_by_name(u8 *part, const char *name) {
 	e = (fst_entry*)(part + fs_get_start(part) + sizeof(fst_entry));
 
 	for(i = 0; i < fs_num_entries(part)-1; i++) {
-		memcpy(name_buf, e->name, 0x10);
+		if(e->name[0]==0x09) {
+			e++;
+			continue;
+		}
 
+		memcpy(name_buf, e->name, 0x10);
 		if (strcmp(name_buf, name) == 0)
 			return e;
 

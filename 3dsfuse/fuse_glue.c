@@ -100,6 +100,11 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 		entries = (fst_entry*)(part + fs_get_start(part) + sizeof(fst_entry));
 
 		for(j = 0; j < fs_num_entries(part)-1; j++) {
+			if(entries->name[0]==0x09) {
+				entries++;
+				continue;
+			}
+
 			printf("@@ name: '%s'\n", entries->name);
 			memset(name_buf, 0, 0x11);
 			memcpy(name_buf, entries->name, 0x10);
