@@ -7,6 +7,7 @@
 
 #include "fuse_glue.h"
 #include "fs.h"
+#include "wearlevel.h"
 #include "types.h"
 #include "helper.h"
 
@@ -15,6 +16,7 @@ static u8 *sav_buf;
 static u8 *out_buf;
 static u8 *xorpad_buf;
 static u32 sav_size=0;
+static u32 xorpad_size=0;
 
 static struct fuse_operations sav_operations = {
 	.getattr = sav_getattr,
@@ -32,20 +34,21 @@ u8 *path_to_part(const char *path) {
 	return fs_part(sav_buf, 1, 0, -1);
 }
 
-int fuse_sav_init(u8 *buf, u32 size, u8 *xorpad, int argc, char *argv[]) {
+int fuse_sav_init(u8 *buf, u32 size, u8 *xorpad, u32 xorpad_sz, int argc, char *argv[]) {
 	// lets keep this locally for the FUSE driver, these
 	// images arent very huge anyway
 	sav_buf = malloc(size);
 	out_buf = malloc(size+0x2000);
 
 	sav_size = size;
+	xorpad_size = xorpad_sz;
 	memcpy(sav_buf, buf, size);
 
-	xorpad_buf = malloc(0x200);
-	memcpy(xorpad_buf, xorpad, 0x200);
+	xorpad_buf = malloc(xorpad_size);
+	memcpy(xorpad_buf, xorpad, xorpad_size);
 
 	memset(out_buf, 0xff, size+0x2000);
-	xor(sav_buf, sav_size, out_buf+0x2000, xorpad_buf, 0x200);
+	xor(sav_buf, sav_size, out_buf+0x2000, xorpad_buf, xorpad_size);
 
 	if(fs_initsave(sav_buf))
 		return 1;
@@ -98,6 +101,7 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 		
 		// skip over root entry
 		entries = (fst_entry*)(part + fs_get_start(part) + sizeof(fst_entry));
+		printf("FST start: %x\n", (u32)entries - (u32)sav_buf);
 
 		for(j = 0; j < fs_num_entries(part)-1; j++) {
 			if(entries->name[0]==0x09) {
@@ -135,7 +139,7 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 	} else if (strcmp(path, "/clean.sav") == 0) {
 		stbuf->st_size = sav_size;
 	} else if (strcmp(path, "/xorpad.bin") == 0) {
-		stbuf->st_size = 512;
+		stbuf->st_size = xorpad_size;
 	} else if (strcmp(path, "/output.sav") == 0) {
 		stbuf->st_size = sav_size+0x2000;
 	} else {
@@ -205,7 +209,7 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 	fst_entry *e;
 	u8 *part;
 	u16 crc=0;
-	u32 saveoff, buf_offs=0, block_offs=0, nblocks=0;
+	u32 saveoff, buf_offs=0, block_offs=0, jour_offs=0, nblocks=0, journalentrycount=0;
 	int i, j;
 	
 	if (strcmp(path, "/clean.sav") == 0) {
@@ -223,9 +227,10 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 		nblocks = ((sav_size+0x2000) >> 12);
 
 		memset(out_buf, 0x00, 0x08); // clear first 8 bytes, unknown
-		xor(sav_buf, sav_size, out_buf+0x2000, xorpad_buf, 0x200);
+		for(i=8; i<0x1000; i++)out_buf[i] = 0xff;
+		xor(sav_buf, sav_size, out_buf+0x2000, xorpad_buf, xorpad_size);
 
-		for(i=0; i<nblocks-1; i++) {
+		for(i=0; i<nblocks-2; i++) {
 			buf_offs = 8 + (i*10);
 			out_buf[buf_offs+0] = (i+2) | 0x80;
 			out_buf[buf_offs+1] = 1;
@@ -243,6 +248,24 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 		printf("+++ BLOCKMAP CRC %04x\n", crc);
 		out_buf[buf_offs+0] = crc & 0xff;
 		out_buf[buf_offs+1] = (crc >> 8);
+
+		/*journalentrycount = (0x1000 - ((nblocks-2) * sizeof(blockmap_entry))) / 32;
+		i = 0;
+		for(jour_offs = nblocks * 10; jour_offs < 0x1000; jour_offs += 0x20, i++, journalentrycount--) {
+			journal_entry* journal = (journal_entry*)(out_buf + jour_offs);
+
+			journal->data.virt_no = i;
+			journal->data.virt_prev_no = i;
+			journal->data.phys_no = i+2;
+			journal->data.phys_prev_no = i+2;
+			journal->data.phys_realloc_cnt = 1;
+			journal->data.virt_realloc_cnt = 1;
+
+			buf_offs = 8 + (i*10);
+			for(j=0; j<8; j++)journal->data.checksum[j] = out_buf[buf_offs+2+j];
+
+			memcpy(&journal->dupe_data, &journal->data, sizeof(journal_data));
+		}*/
 
 		// mirror blockmap+journal
 		memcpy(out_buf+0x1000, out_buf, 0x1000);
