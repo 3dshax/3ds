@@ -101,7 +101,6 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 		
 		// skip over root entry
 		entries = (fst_entry*)(part + fs_get_start(part) + sizeof(fst_entry));
-		printf("FST start: %x\n", (u32)entries - (u32)sav_buf);
 
 		for(j = 0; j < fs_num_entries(part)-1; j++) {
 			if(entries->name[0]==0x09) {
