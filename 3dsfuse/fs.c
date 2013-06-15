@@ -8,7 +8,7 @@
 #include "fs.h"
 
 #define FST_BLOCK_OFFSET	0x6c
-#define FST_OFFSET		0x58
+#define FILESTORE_OFFSET		0x58
 
 typedef struct {
 	u8 *sav;
@@ -287,6 +287,11 @@ int fs_dpfs_getpartno(int datapart, u32 part_offset)
 	return 0;
 }
 
+u8 *fs_get_savepart(u8 *buf)
+{
+	return fs_part(buf, 1, 0, fs_dpfs_getpartno(0, 0));
+}
+
 u8 *fs_getfilebase()
 {
 	u8 *part;
@@ -300,17 +305,22 @@ u8 *fs_getfilebase()
 }
 
 u32 fs_get_offset(u8 *buf) {
-	return getle32(buf + FST_OFFSET);
+	return getle32(buf + FILESTORE_OFFSET);
+}
+
+u32 fs_getsave_mediasize(u8 *part)
+{
+	return getle32(part + 0x24);
 }
 
 u32 fs_get_start(u8 *part) {
-	u32 block_offset, fst_offset;
+	u32 fst_offset, filestore_offset;
 
-	block_offset = getle32(part + 0x78);
-	fst_offset   = getle32(part + 0x58);
+	fst_offset = getle32(part + 0x78);
+	filestore_offset   = getle32(part + 0x58);
 
-	if(savectx.datapart_offset==0)return (block_offset * 0x200) + fst_offset;
-	return block_offset;
+	if(savectx.datapart_offset==0)return (fst_offset * fs_getsave_mediasize(part)) + filestore_offset;
+	return fst_offset;
 }
 
 int fs_num_entries(u8 *part) {
@@ -464,7 +474,7 @@ int fs_verifyupdatehashtree_fsdata(u32 offset, u32 size, u8 *databuf, int fileda
 		datapart = 0;
 		part = fs_part(savectx.sav, 1, 0, 0);
 		part2 = fs_part(savectx.sav, 1, 0, 1);
-		offset += fs_get_offset(part);
+		offset += fs_get_offset(fs_get_savepart(savectx.sav));
 
 		hashtree = fs_part(savectx.sav, 0, 0, -1);
 		table = fs_part_get_info(savectx.sav, 0);

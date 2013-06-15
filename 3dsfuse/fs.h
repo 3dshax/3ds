@@ -89,6 +89,7 @@ u32 fs_get_offset(u8 *buf);
 
 partition_table *fs_part_get_info(u8 *buf, u32 part_no);
 u8 *fs_part(u8 *buf, int fs, int datapart, int part_tableno);
+u8 *fs_get_savepart(u8 *buf);
 u8 *fs_getfilebase();
 int fs_verifyupdatehashtree_fsdata(u32 offset, u32 size, u8 *databuf, int filedata, int update);
 

@@ -31,7 +31,7 @@ u8 *path_to_part(const char *path) {
 		return NULL; 
 	}
 
-	return fs_part(sav_buf, 1, 0, -1);
+	return fs_get_savepart(sav_buf);
 }
 
 int fuse_sav_init(u8 *buf, u32 size, u8 *xorpad, u32 xorpad_sz, int argc, char *argv[]) {
@@ -67,7 +67,7 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 		filler(buf, ".", NULL, 0);
 		filler(buf, "..", NULL, 0);
 
-		part = fs_part(sav_buf, 1, 0, -1);
+		part = fs_get_savepart(sav_buf);
 		if(part) {
 			if (strncmp((char*)part, "SAVE", 4) != 0) {
 				printf("SAVE partition is invalid.\n");
@@ -86,7 +86,7 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 	} 
 
 	if (strncmp(path, "/part_00", 8) == 0) {
-		part = fs_part(sav_buf, 1, 0, -1);
+		part = fs_get_savepart(sav_buf);
 		if(part == NULL)return -ENOENT;
 
 		filler(buf, ".", NULL, 0);
@@ -108,9 +108,9 @@ int sav_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 				continue;
 			}
 
-			printf("@@ name: '%s'\n", entries->name);
 			memset(name_buf, 0, 0x11);
 			memcpy(name_buf, entries->name, 0x10);
+			printf("@@ name: '%s'\n", name_buf);
 			filler(buf, name_buf, NULL, 0);
 			entries++;
 		}
@@ -132,7 +132,7 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 		stbuf->st_mode = S_IFDIR | 0445;
 		stbuf->st_nlink = 2 + 1; // always 2 since we dont do subdirs yet
 	} else if (strncmp(path, "/part_", 6) == 0 && strlen(path) == 8) {
-		if(fs_part(sav_buf, 1, 0, -1) == NULL)return -ENOENT;
+		if(fs_get_savepart(sav_buf) == NULL)return -ENOENT;
 		stbuf->st_mode = S_IFDIR | 0445;
 		stbuf->st_nlink = 2;
 	} else if (strcmp(path, "/clean.sav") == 0) {
@@ -142,7 +142,7 @@ int sav_getattr(const char *path, struct stat *stbuf) {
 	} else if (strcmp(path, "/output.sav") == 0) {
 		stbuf->st_size = sav_size+0x2000;
 	} else {
-		part = fs_part(sav_buf, 1, 0, -1);
+		part = fs_get_savepart(sav_buf);
 		if(part == NULL)return -ENOENT;
 
 		if (strncmp((char*)part, "SAVE", 4) != 0) {
@@ -289,7 +289,7 @@ int sav_read(const char *path, char *buf, size_t size, off_t offset,
 	if (offset+size > (size_t)getle64(e->size))
 		size = (size_t)getle64(e->size) - offset;
 
-	saveoff = (getle32(e->block_no) * 0x200) + offset;
+	saveoff = (getle32(e->block_no) * fs_getsave_mediasize(part)) + offset;
 
 	if(fs_verifyupdatehashtree_fsdata(saveoff, size, (u8*)buf, 1, 0))return -EIO;
 
@@ -334,7 +334,7 @@ int sav_write(const char *path, const char *buf, size_t size, off_t offset,
 	if (offset+size > (size_t)getle64(e->size))
 		size = (size_t)getle64(e->size) - offset;
 
-	saveoff = (getle32(e->block_no) * 0x200) + offset;
+	saveoff = (getle32(e->block_no) * fs_getsave_mediasize(part)) + offset;
 
 	if(fs_verifyupdatehashtree_fsdata(saveoff, size, NULL, 1, 0))return -EIO;//the hashtree must be already valid before writing any data.
 
