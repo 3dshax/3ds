@@ -13,7 +13,8 @@ int find_key(u8 *buf, size_t len, u8 *out) {
 
 	u8 ff_hash[16]="\xde\x03\xfe\x65\xa6\x76\x5c\xaa\x8c\x91\x34\x3a\xcc\x62\xcf\xfc";
 
-	hash_list = malloc(4 * ((len / 0x200)+1));
+	hash_list = malloc(sizeof(hash_entry*) * ((len / 0x200)+1));
+	memset(hash_list, 0, sizeof(hash_entry*) * ((len / 0x200)+1));
 
 	for(i = 0; i < (len / 0x200); i++) {
 		md5_buf(buf + (i*0x200), hash, 0x200);
@@ -56,6 +57,9 @@ int find_key(u8 *buf, size_t len, u8 *out) {
 #endif
 
 	memcpy(out, buf + (hash_list[rec_idx]->block_idx * 0x200), 0x200);
+
+	for(i = 0; i < count; i++)free(hash_list[i]);
+	free(hash_list);
 
 	return 0;
 }

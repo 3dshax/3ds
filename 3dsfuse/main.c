@@ -85,9 +85,9 @@ int main(int argc, char *argv[]) {
 	memset(zerobuf, 0, 0x10);
 	if(memcmp(&out_buf[0x10], zerobuf, 0x10)==0)enable_xorpad = 0;
 
-	/*f = fopen("rawimage.bin", "wb");
+	f = fopen("rawimage.bin", "wb");
 	fwrite(out_buf, 1, size, f);
-	fclose(f);*/
+	fclose(f);
 
 	if(enable_xorpad) {
 		if(load_xorpad) {

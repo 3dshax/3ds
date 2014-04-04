@@ -119,7 +119,7 @@ int fs_calcivfchash(partition_table *table, int datapart, int *update)
 	memset(calchash, 0, 0x20);
 	memset(calchash2, 0, 0x20);
 
-	part = fs_part(savectx.sav, 0, datapart, -1);
+	part = fs_part(savectx.sav, 0, datapart, 1-partno);//-1
 	part2 = fs_part(savectx.sav, 0, datapart, partno);
 	if(part == NULL || part2 == NULL) {
 		printf("invalid partition.\n");
@@ -246,7 +246,7 @@ u8 *fs_part(u8 *buf, int fs, int datapart, int part_tableno) {
 		fs_sz = (u32)getle64(part->ivfc.levels[3].size);
 
 		if(num == part_tableno) {
-			//printf("datapart %x pos %x ivfcpartsize %x fs off %x fs sz %x\n", datapart, pos, (u32)getle64(part->dpfs.ivfcpart.size), fs_off, fs_sz);
+			printf("datapart %x pos %x ivfcpartsize %x fs off %x fs sz %x\n", datapart, pos, (u32)getle64(part->dpfs.ivfcpart.size), fs_off, fs_sz);
 			if(!fs)return buf + pos;
 			return buf + pos + fs_off;
 		}
@@ -263,6 +263,7 @@ int fs_dpfs_getpartno(int datapart, u32 part_offset)
 	u32 maskstart, blksz, blockpos;
 	u32 tableno;
 	u32 mask = 0;
+	u32 total_entries;
 	u8 *part;
 	partition_table *part_table = (partition_table*)&savectx.sav[savectx.activepart_tableoffset];
 
@@ -272,19 +273,26 @@ int fs_dpfs_getpartno(int datapart, u32 part_offset)
 
 	maskstart = (u32)getle64(part_table->dpfs.tables[tableno].offset) + (u32)getle64(part_table->dpfs.tables[tableno].size);
 	blksz = getle32(part_table->dpfs.ivfcpart.blksize);
+	total_entries = (u32)getle64(part_table->dpfs.ivfcpart.size) >> blksz;
 
 	part = savectx.sav + part_base + maskstart;
+	blockpos = (total_entries) - (part_offset >> blksz);
 
-	blockpos = part_offset >> blksz;
-	if(blockpos > 30) {
-		printf("fs_dpfs_getpartflag: part_offset>=0x1f000 not supported currently, part_offset %x blockpos %x.\n", part_offset, blockpos);
-		return -1;
+	printf("fs_dpfs_getpartflag: part_offset %x blockpos %x maskstart %x total_entries %x\n", part_offset, blockpos, maskstart, total_entries);
+
+	if(total_entries > 0x1e) {
+		return 0;
+		//return -1;
 	}
 
-	if(tableno==0)mask = getle32(part+4);
-	if(tableno)mask = getle32(part);
-	if(mask & (1 << ( 30 - blockpos)))return 1;
-	return 0;
+	if(tableno==0)part+= 4;
+
+	return (part[blockpos / 8] << ((7-blockpos) % 8)) & 1;
+
+	//mask = getle32(part);
+
+	//if(mask & (1 << ( 30 - blockpos)))return 1;
+	//return 0;
 }
 
 u8 *fs_get_savepart(u8 *buf)
@@ -432,8 +440,8 @@ int fs_verifyhashtree(u8 *part, u8 *part2, int datapart, u8 *hashtree, ivfc_head
 				printf("\n");
 				printf("part off %x\n", (u32)part - (u32)savectx.sav);
 				if(part2)printf("part2 off %x\n", (u32)part2 - (u32)savectx.sav);
-				free(hashdata);
-				return 2;
+				//free(hashdata);
+				//return 3;
 			}
 		}
 		else {
